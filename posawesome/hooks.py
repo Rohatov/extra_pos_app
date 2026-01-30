@@ -1,15 +1,3 @@
-<<<<<<< HEAD
-doc_events = {
-    "Sales Invoice": {
-        "validate": "posawesome.posawesome.api.invoice.validate",
-        "on_cancel": "posawesome.posawesome.api.invoice.on_cancel",
-    },
-    "Customer": {
-        "validate": "posawesome.posawesome.api.customers.set_customer_info",
-    },
-    "Payment Entry": {"on_cancel": "posawesome.posawesome.api.payment_entry.on_payment_entry_cancel"},
-}
-=======
 from posawesome.utils import get_build_version
 
 app_name = "posawesome"
@@ -347,4 +335,3 @@ fixtures = [
         ],
     },
 ]
->>>>>>> 8888169 (Release: v15.18.0 — 2026-01-17)
