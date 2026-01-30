@@ -436,6 +436,179 @@ def get_unallocated_payments(customer, company, currency, mode_of_payment=None):
 
 
 @frappe.whitelist()
+def get_customer_sverka(customer, company, currency=None):
+    """
+    GL Entry asosida mijoz sverka (reconciliation) hisoboti.
+
+    Bu eng aniq usul - barcha buxgalteriya yozuvlari GL Entry da saqlanadi.
+
+    Buxgalteriya mantiqи (Debitor/Receivable hisobi):
+    - DEBIT = Mijozga sotilgan tovar/xizmat (qarz oshadi) - bizDAN qarz
+    - KREDIT = Mijozdan qabul qilingan to'lov (qarz kamayadi) - bizGA kirim
+
+    Balans: Ijobiy = Mijoz bizga qarzdor, Manfiy = Ortiqcha to'lov (avans)
+    """
+    if not customer:
+        frappe.throw(_("Customer is required"))
+    if not company:
+        frappe.throw(_("Company is required"))
+
+    # Get receivable account for this customer
+    receivable_account = get_party_account("Customer", customer, company)
+
+    if not receivable_account:
+        # Fallback to company default
+        receivable_account = frappe.get_cached_value(
+            "Company", company, "default_receivable_account"
+        )
+
+    if not receivable_account:
+        frappe.throw(_("Receivable account not found for customer {0}").format(customer))
+
+    # Query GL Entry - eng aniq ma'lumot manbai
+    # Bu yerda BARCHA tranzaksiyalar ko'rinadi: Invoice, Payment, Journal Entry, etc.
+    gl_entries = frappe.db.sql(
+        """
+        SELECT
+            gle.name,
+            gle.posting_date,
+            gle.voucher_type,
+            gle.voucher_no,
+            gle.debit,
+            gle.credit,
+            gle.debit_in_account_currency as debit_amount,
+            gle.credit_in_account_currency as credit_amount,
+            gle.account_currency as currency,
+            gle.remarks,
+            gle.against_voucher_type,
+            gle.against_voucher
+        FROM `tabGL Entry` gle
+        WHERE gle.party_type = 'Customer'
+            AND gle.party = %(customer)s
+            AND gle.company = %(company)s
+            AND gle.account = %(account)s
+            AND gle.is_cancelled = 0
+        ORDER BY gle.posting_date ASC, gle.creation ASC
+        """,
+        {
+            "customer": customer,
+            "company": company,
+            "account": receivable_account,
+        },
+        as_dict=True,
+    )
+
+    transactions = []
+
+    for gle in gl_entries:
+        # Debit = Qarz oshishi (faktura, xizmat)
+        # Credit = Qarz kamayishi (to'lov, qaytarish)
+        debit_amt = flt(gle.debit_in_account_currency) or flt(gle.debit)
+        credit_amt = flt(gle.credit_in_account_currency) or flt(gle.credit)
+
+        # Determine transaction type and get details
+        voucher_type = gle.voucher_type
+        voucher_no = gle.voucher_no
+
+        # Get invoice/payment reference info
+        invoice_name = None
+        payment_name = None
+        mode_of_payment = None
+        description = ""
+        trans_type = "other"
+
+        if voucher_type == "Sales Invoice":
+            is_return = frappe.db.get_value("Sales Invoice", voucher_no, "is_return")
+
+            if debit_amt > 0:
+                # DEBIT: Faktura yaratildi - qarz oshdi
+                invoice_name = voucher_no
+                payment_name = None
+                if is_return:
+                    trans_type = "credit_note"
+                    description = _("Kredit nota (qaytarish)")
+                else:
+                    trans_type = "invoice"
+                    description = _("Faktura - qarz")
+            else:
+                # CREDIT: To'lov yoki qaytarish
+                invoice_name = voucher_no
+                if is_return:
+                    trans_type = "credit_note"
+                    payment_name = voucher_no
+                    description = _("Kredit nota")
+                else:
+                    # Direct payment on Sales Invoice
+                    trans_type = "direct_payment"
+                    payment_name = voucher_no  # Same as invoice - direct payment
+                    description = _("To'g'ridan-to'g'ri to'lov")
+
+        elif voucher_type == "Payment Entry":
+            payment_name = voucher_no
+            trans_type = "payment"
+            mode_of_payment = frappe.db.get_value("Payment Entry", voucher_no, "mode_of_payment")
+            # Get linked invoice from payment
+            linked_invs = frappe.get_all(
+                "Payment Entry Reference",
+                filters={"parent": voucher_no, "reference_doctype": "Sales Invoice"},
+                pluck="reference_name"
+            )
+            if linked_invs:
+                invoice_name = ", ".join(linked_invs)
+            description = _("To'lov - ") + (mode_of_payment or "")
+
+        elif voucher_type == "Journal Entry":
+            payment_name = voucher_no
+            trans_type = "journal"
+            # Check if it references an invoice
+            if gle.against_voucher_type == "Sales Invoice" and gle.against_voucher:
+                invoice_name = gle.against_voucher
+            description = gle.remarks or _("Jurnal yozuvi")
+
+        elif voucher_type == "POS Invoice":
+            invoice_name = voucher_no
+            if debit_amt > 0:
+                trans_type = "pos_invoice"
+                description = _("POS faktura")
+            else:
+                trans_type = "pos_payment"
+                payment_name = voucher_no
+                description = _("POS to'lov")
+
+        else:
+            description = gle.remarks or voucher_type
+
+        transactions.append({
+            "id": f"gl_{gle.name}",
+            "date": gle.posting_date,
+            "voucher_type": voucher_type,
+            "voucher_no": voucher_no,
+            "invoice_name": invoice_name,
+            "payment_name": payment_name,
+            "debit": debit_amt,   # DEBIT = Qarz oshishi (bizDAN qarz)
+            "credit": credit_amt, # KREDIT = Qarz kamayishi (bizGA kirim)
+            "mode_of_payment": mode_of_payment,
+            "currency": gle.currency or frappe.get_cached_value("Company", company, "default_currency"),
+            "type": trans_type,
+            "description": description,
+        })
+
+    # Calculate running balance
+    # Balans = DEBIT - KREDIT
+    # Ijobiy = Mijoz bizga qarzdor
+    # Manfiy = Biz mijozga qarzdormiz (ortiqcha to'lov/avans)
+    balance = 0
+    for t in transactions:
+        balance = balance + flt(t.get("debit", 0)) - flt(t.get("credit", 0))
+        t["balance"] = balance
+
+    return {
+        "transactions": transactions,
+        "final_balance": balance,
+        "receivable_account": receivable_account,
+    }
+
+
 def auto_reconcile_customer_invoices(customer, company, currency=None, pos_profile=None):
     """Automatically reconcile all unallocated payments against outstanding invoices for a customer.
 

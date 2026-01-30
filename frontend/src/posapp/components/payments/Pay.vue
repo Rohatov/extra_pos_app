@@ -12,17 +12,22 @@
 						<v-row>
 							<v-col md="7" cols="12">
 								<p>
-									<strong>{{ __("Invoices") }}</strong>
-									<span v-if="total_outstanding_amount" class="text-primary"
-										>{{ __("- Total Outstanding") }} :
+									<strong>{{ __("Klient Sverka") }}</strong>
+									<span v-if="final_balance !== 0" :class="final_balance > 0 ? 'text-error' : 'text-success'">
+										{{ __("- Qoldiq") }}:
 										{{ currencySymbol(pos_profile.currency) }}
-										{{ formatCurrency(total_outstanding_amount) }}</span
-									>
+										{{ formatCurrency(Math.abs(final_balance || 0)) }}
+										<small v-if="final_balance > 0">(qarzdor)</small>
+										<small v-else-if="final_balance < 0">(ortiqcha)</small>
+									</span>
+									<span v-else class="text-success">
+										{{ __("- Hisob tugallangan") }}
+									</span>
 								</p>
 							</v-col>
 							<v-col md="5" cols="12">
 								<p v-if="total_selected_invoices" class="golden--text text-end">
-									<span>{{ __("Total Selected :") }}</span>
+									<span>{{ __("Tanlangan :") }}</span>
 									<span>
 										{{ currencySymbol(pos_profile.currency) }}
 										{{ formatCurrency(total_selected_invoices) }}
@@ -47,7 +52,7 @@
 							</v-col>
 							<v-col> </v-col>
 							<v-col md="3" cols="12">
-								<v-btn block color="warning" theme="dark" @click="get_outstanding_invoices">{{
+								<v-btn block color="warning" theme="dark" @click="get_customer_sverka(); get_outstanding_invoices()">{{
 									__("Search")
 								}}</v-btn>
 							</v-col>
@@ -125,42 +130,146 @@
 								</div>
 							</v-col>
 						</v-row>
+						<!-- Klient Sverka Table - GL Entry asosida -->
+						<!-- DEBIT = BizDAN qarz (tovar sotildi) - qizil -->
+						<!-- KREDIT = BizGA kirim (to'lov olindi) - yashil -->
 						<v-data-table
-							:headers="invoices_headers"
-							:items="filtered_outstanding_invoices"
-							item-key="voucher_no"
-							class="elevation-1 mt-0"
-							:loading="invoices_loading"
-							@click:row="selectSingleInvoice"
-							:item-class="isSelected"
+							:headers="sverka_headers"
+							:items="sverka_transactions"
+							item-key="id"
+							class="elevation-1 mt-0 sverka-table"
+							:loading="sverka_loading"
+							density="compact"
 						>
-							<template v-slot:item.actions="{ item }">
-								<v-checkbox
-									:model-value="isInvoiceSelected(item)"
-									color="primary"
-									@click.stop="toggleInvoiceSelection(item)"
-								>
-								</v-checkbox>
+							<template v-slot:item.date="{ item }">
+								{{ item.date }}
 							</template>
-							<template v-slot:item.invoice_amount="{ item }">
-								{{ currencySymbol(item.currency) }}
-								{{ formatCurrency(item.invoice_amount) }}
+							<template v-slot:item.invoice_name="{ item }">
+								<span v-if="item.invoice_name" class="text-primary">
+									{{ item.invoice_name }}
+								</span>
+								<span v-else class="text-grey">-</span>
 							</template>
-							<template v-slot:item.outstanding_amount="{ item }">
-								<span class="text-primary"
-									>{{
-										currencySymbol(
-											item?.party_account_currency ||
-												item?.currency ||
-												pos_profile.currency,
-										)
-									}}
-									{{ formatCurrency(item?.outstanding_amount || 0) }}</span
-								>
+							<template v-slot:item.payment_name="{ item }">
+								<span v-if="item.payment_name" class="text-success">
+									{{ item.payment_name }}
+								</span>
+								<span v-else class="text-grey">-</span>
+							</template>
+							<template v-slot:item.debit="{ item }">
+								<!-- DEBIT: BizDAN qarz (tovar sotildi) - qizil -->
+								<span v-if="item.debit" class="text-error font-weight-bold">
+									{{ currencySymbol(item.currency || pos_profile.currency) }}
+									{{ formatCurrency(item.debit) }}
+								</span>
+								<span v-else class="text-grey">-</span>
+							</template>
+							<template v-slot:item.credit="{ item }">
+								<!-- KREDIT: BizGA kirim (to'lov olindi) - yashil -->
+								<span v-if="item.credit" class="text-success font-weight-bold">
+									{{ currencySymbol(item.currency || pos_profile.currency) }}
+									{{ formatCurrency(item.credit) }}
+								</span>
+								<span v-else class="text-grey">-</span>
+							</template>
+							<template v-slot:item.balance="{ item }">
+								<!-- Qoldiq: Ijobiy=qarzdor (qizil), Manfiy=avans (yashil) -->
+								<span :class="item.balance > 0 ? 'text-error font-weight-bold' : item.balance < 0 ? 'text-success font-weight-bold' : 'text-grey'">
+									{{ currencySymbol(item.currency || pos_profile.currency) }}
+									{{ formatCurrency(Math.abs(item.balance)) }}
+									<small v-if="item.balance < 0">(avans)</small>
+								</span>
 							</template>
 						</v-data-table>
-						<v-divider></v-divider>
-					</div>
+
+						<!-- Oxirgi Qoldiq Summary -->
+						<v-row class="mt-4">
+							<v-col cols="12" class="text-right">
+								<v-card class="pa-3" variant="outlined" :color="final_balance > 0 ? 'error' : final_balance < 0 ? 'success' : 'grey'">
+									<h3>
+										{{ __("Oxirgi Qoldiq") }}:
+										<span :class="final_balance > 0 ? 'text-error' : final_balance < 0 ? 'text-success' : ''">
+											{{ currencySymbol(pos_profile.currency) }}
+											{{ formatCurrency(Math.abs(final_balance || 0)) }}
+										</span>
+									</h3>
+									<p class="text-caption mb-0">
+										<span v-if="final_balance > 0" class="text-error">
+											{{ __("Mijoz sizga qarzdor") }}
+										</span>
+										<span v-else-if="final_balance < 0" class="text-success">
+											{{ __("Mijozda ortiqcha to'lov mavjud") }}
+										</span>
+										<span v-else class="text-grey">
+											{{ __("Hisob-kitob tugallangan") }}
+										</span>
+									</p>
+								</v-card>
+							</v-col>
+</v-row>
+<v-divider></v-divider>
+
+<!-- Qarzdor invoicelar - Qarz to'lash uchun -->
+<v-row v-if="outstanding_invoices.length" class="mt-4">
+<v-col md="7" cols="12">
+<p>
+<strong>{{ __("Qarzdor invoicelar") }}</strong>
+<span v-if="total_outstanding_amount" class="text-error">
+{{ __("- Jami qarz") }} :
+{{ currencySymbol(pos_profile.currency) }}
+{{ formatCurrency(total_outstanding_amount) }}
+</span>
+</p>
+</v-col>
+<v-col md="5" cols="12">
+<p v-if="total_selected_invoices" class="golden--text text-end">
+<span>{{ __("Tanlangan :") }}</span>
+<span>
+{{ currencySymbol(pos_profile.currency) }}
+{{ formatCurrency(total_selected_invoices) }}
+</span>
+<small>({{ selected_invoices.length }} invoice(s))</small>
+</p>
+</v-col>
+</v-row>
+<v-data-table
+v-if="outstanding_invoices.length"
+:headers="invoices_headers"
+:items="filtered_outstanding_invoices"
+item-key="voucher_no"
+class="elevation-1 mt-0"
+:loading="invoices_loading"
+@click:row="selectSingleInvoice"
+:item-class="isSelected"
+density="compact"
+>
+<template v-slot:item.actions="{ item }">
+<v-checkbox
+:model-value="isInvoiceSelected(item)"
+color="primary"
+@click.stop="toggleInvoiceSelection(item)"
+>
+</v-checkbox>
+</template>
+<template v-slot:item.invoice_amount="{ item }">
+{{ currencySymbol(item.currency) }}
+{{ formatCurrency(item.invoice_amount) }}
+</template>
+<template v-slot:item.outstanding_amount="{ item }">
+<span class="text-error"
+>{{
+currencySymbol(
+item?.party_account_currency ||
+item?.currency ||
+pos_profile.currency,
+)
+}}
+{{ formatCurrency(item?.outstanding_amount || 0) }}</span
+>
+</template>
+</v-data-table>
+<v-divider v-if="outstanding_invoices.length"></v-divider>
+</div>
 					<div v-if="pos_profile.posa_allow_reconcile_payments && unallocated_payments.length">
 						<v-row>
 							<v-col md="7" cols="12">
@@ -549,6 +658,10 @@ export default {
 			currency_filter: "ALL",
 			exchangeRate: null,
 			companyCurrency: null,
+			// Klient Sverka
+			sverka_transactions: [],
+			sverka_loading: false,
+			final_balance: 0,
 			invoices_headers: [
 				{
 					title: "",
@@ -681,6 +794,47 @@ export default {
 					align: "end",
 					sortable: true,
 					key: "amount",
+				},
+			],
+			// Klient Sverka headers - GL Entry asosida
+			// DEBIT = BizDAN qarz (tovar sotildi) - qizil
+			// KREDIT = BizGA kirim (to'lov olindi) - yashil
+			sverka_headers: [
+				{
+					title: __("Sana"),
+					align: "start",
+					sortable: true,
+					key: "date",
+				},
+				{
+					title: __("Faktura"),
+					align: "start",
+					sortable: false,
+					key: "invoice_name",
+				},
+				{
+					title: __("To'lov"),
+					align: "start",
+					sortable: false,
+					key: "payment_name",
+				},
+				{
+					title: __("Debit (Qarz)"),
+					align: "end",
+					sortable: false,
+					key: "debit",
+				},
+				{
+					title: __("Kredit (To'lov)"),
+					align: "end",
+					sortable: false,
+					key: "credit",
+				},
+				{
+					title: __("Qoldiq"),
+					align: "end",
+					sortable: false,
+					key: "balance",
 				},
 			],
 			isSubmitting: false,
@@ -895,6 +1049,40 @@ export default {
 					}
 				});
 		},
+		// Klient Sverka - Get combined invoices and payments
+		get_customer_sverka() {
+			this.sverka_loading = true;
+			this.sverka_transactions = [];
+			this.final_balance = 0;
+
+			if (!this.customer_name) {
+				this.sverka_loading = false;
+				return;
+			}
+
+			if (isOffline()) {
+				this.sverka_loading = false;
+				return;
+			}
+
+			return frappe
+				.call("posawesome.posawesome.api.payment_entry.get_customer_sverka", {
+					customer: this.customer_name,
+					company: this.company,
+					currency: this.currency_filter !== "ALL" ? this.currency_filter : null,
+				})
+				.then((r) => {
+					if (r.message) {
+						this.sverka_transactions = r.message.transactions || [];
+						this.final_balance = r.message.final_balance || 0;
+					}
+					this.sverka_loading = false;
+				})
+				.catch((err) => {
+					console.error("Failed to fetch sverka data:", err);
+					this.sverka_loading = false;
+				});
+		},
 		get_unallocated_payments() {
 			if (!this.pos_profile.posa_allow_reconcile_payments) return;
 			this.unallocated_payments_loading = true;
@@ -1065,6 +1253,29 @@ export default {
 			return this.payment_method_currencies[mode_of_payment] || this.pos_profile.currency;
 		},
 
+		// Sverka jadval uchun helper metodlar
+		getVoucherTypeColor(type) {
+			const colors = {
+				'invoice': 'error',
+				'payment': 'success',
+				'credit_note': 'warning',
+				'journal': 'info',
+				'pos_invoice': 'primary',
+				'other': 'grey',
+			};
+			return colors[type] || 'grey';
+		},
+
+		getVoucherTypeLabel(voucherType) {
+			const labels = {
+				'Sales Invoice': __('Faktura'),
+				'Payment Entry': __("To'lov"),
+				'Journal Entry': __('Jurnal'),
+				'POS Invoice': __('POS'),
+			};
+			return labels[voucherType] || voucherType;
+		},
+
 		async loadPaymentMethodCurrencies() {
 			if (!this.pos_profile?.payments?.length || !this.company) {
 				console.log("Cannot load payment method currencies: missing payments or company");
@@ -1117,6 +1328,9 @@ export default {
 			this.selected_mpesa_payments = [];
 			this.auto_reconcile_summary = "";
 			this.auto_reconcile_loading = false;
+			// Klient Sverka reset
+			this.sverka_transactions = [];
+			this.final_balance = 0;
 			this.set_payment_methods();
 		},
 
@@ -1603,6 +1817,8 @@ export default {
 					this.outstanding_invoices = [];
 					this.unallocated_payments = [];
 					this.mpesa_payments = [];
+					this.sverka_transactions = [];
+					this.final_balance = 0;
 					this.exchangeRate = null;
 					return;
 				}
@@ -1615,6 +1831,7 @@ export default {
 					await this.fetchCompanyCurrency();
 				}
 				this.fetch_customer_details();
+				this.get_customer_sverka();
 				this.get_outstanding_invoices();
 				this.get_unallocated_payments();
 				this.get_draft_mpesa_payments_register();
@@ -1671,5 +1888,26 @@ input[total_selected_mpesa_payments] {
 
 .totals-wrapper {
     font-weight: bold;
+}
+
+/* Sverka jadval stillari */
+.sverka-table {
+    font-size: 0.85rem;
+}
+
+.sverka-table .v-data-table__tr:hover {
+    background-color: rgba(var(--v-theme-primary), 0.04) !important;
+}
+
+.sverka-table .text-error {
+    color: #D32F2F !important;
+}
+
+.sverka-table .text-success {
+    color: #388E3C !important;
+}
+
+.sverka-table .font-weight-bold {
+    font-weight: 600 !important;
 }
 </style>
