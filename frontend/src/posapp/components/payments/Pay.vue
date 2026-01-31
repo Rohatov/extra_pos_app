@@ -182,9 +182,9 @@
 							</template>
 						</v-data-table>
 
-						<!-- Oxirgi Qoldiq Summary -->
-						<v-row class="mt-4">
-							<v-col cols="12" class="text-right">
+						<!-- Oxirgi Qoldiq Summary - faqat customer tanlanganda ko'rinadi -->
+						<v-row v-if="customer_name && sverka_transactions.length" class="mt-4">
+							<v-col cols="8" class="text-right">
 								<v-card class="pa-3" variant="outlined" :color="final_balance > 0 ? 'error' : final_balance < 0 ? 'success' : 'grey'">
 									<h3>
 										{{ __("Oxirgi Qoldiq") }}:
@@ -206,8 +206,20 @@
 									</p>
 								</v-card>
 							</v-col>
+							<v-col cols="4" class="d-flex align-center justify-end">
+								<v-btn
+									color="success"
+									theme="dark"
+									size="large"
+									:disabled="!sverka_transactions.length || sverka_loading"
+									@click="exportSverkaToExcel"
+								>
+									<v-icon left>mdi-microsoft-excel</v-icon>
+									{{ __("Export Excel") }}
+								</v-btn>
+							</v-col>
 </v-row>
-<v-divider></v-divider>
+<v-divider v-if="customer_name && sverka_transactions.length"></v-divider>
 
 <!-- Qarzdor invoicelar - Qarz to'lash uchun -->
 <v-row v-if="outstanding_invoices.length" class="mt-4">
@@ -662,6 +674,7 @@ export default {
 			sverka_transactions: [],
 			sverka_loading: false,
 			final_balance: 0,
+			export_loading: false,
 			invoices_headers: [
 				{
 					title: "",
@@ -1082,6 +1095,307 @@ export default {
 					console.error("Failed to fetch sverka data:", err);
 					this.sverka_loading = false;
 				});
+		},
+		// Export Sverka to Excel with Items
+		async exportSverkaToExcel() {
+			if (!this.sverka_transactions.length) {
+				frappe.msgprint(__("No data to export"));
+				return;
+			}
+
+			// Show loading
+			frappe.show_alert({
+				message: __("Preparing Excel file with items..."),
+				indicator: "blue"
+			});
+
+			try {
+				// Fetch data with items from backend
+				const response = await frappe.call({
+					method: "posawesome.posawesome.api.payment_entry.get_customer_sverka_with_items",
+					args: {
+						customer: this.customer_name,
+						company: this.company,
+						currency: this.currency_filter !== "ALL" ? this.currency_filter : null,
+					}
+				});
+
+				if (!response.message || !response.message.transactions) {
+					frappe.msgprint(__("Failed to fetch data with items"));
+					return;
+				}
+
+				const transactions = response.message.transactions;
+				const finalBalance = response.message.final_balance || 0;
+
+				const customerName = this.customer_name || "Customer";
+				const currency = this.pos_profile.currency || "USD";
+				const today = new Date().toISOString().split("T")[0];
+				const filename = `${customerName.replace(/[^a-zA-Z0-9]/g, "_")}_Reconciliation_${today}.xlsx`;
+
+				// Build rows with items
+				const rows = [];
+				
+				for (const trans of transactions) {
+					// Main transaction row
+					const mainRow = {
+						isInvoice: trans.debit > 0 && trans.voucher_type && trans.voucher_type.includes("Invoice"),
+						isItem: false,
+						date: trans.date || "",
+						invoice_name: trans.invoice_name || "",
+						payment_name: trans.payment_name || "",
+						debit: trans.debit ? Number(trans.debit.toFixed(2)) : "",
+						credit: trans.credit ? Number(trans.credit.toFixed(2)) : "",
+						balance: trans.balance !== undefined ? Number(trans.balance.toFixed(2)) : "",
+						item_name: "",
+						qty: "",
+						rate: "",
+						amount: ""
+					};
+					rows.push(mainRow);
+
+					// Add items if this is an invoice with items
+					if (trans.items && trans.items.length > 0) {
+						for (const item of trans.items) {
+							rows.push({
+								isInvoice: false,
+								isItem: true,
+								date: "",
+								invoice_name: "",
+								payment_name: "",
+								debit: "",
+								credit: "",
+								balance: "",
+								item_name: item.item_name || item.item_code || "",
+								qty: item.qty ? Number(item.qty) : "",
+								rate: item.rate ? Number(item.rate.toFixed(2)) : "",
+								amount: item.amount ? Number(item.amount.toFixed(2)) : ""
+							});
+						}
+					}
+				}
+
+				// Add summary
+				rows.push({ isEmpty: true });
+				rows.push({
+					isFinalBalance: true,
+					date: "Final Balance:",
+					balance: Number(finalBalance.toFixed(2))
+				});
+
+				// Create Excel with items
+				this.createAndDownloadExcelWithItems(rows, filename, customerName, currency);
+
+			} catch (error) {
+				console.error("Export error:", error);
+				frappe.msgprint(__("Failed to export. Please try again."));
+			}
+		},
+		createAndDownloadExcelWithItems(rows, filename, customerName, currency) {
+			// Check if ExcelJS library is loaded
+			if (typeof ExcelJS === "undefined") {
+				// Load ExcelJS library dynamically
+				const script = document.createElement("script");
+				script.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+				script.onload = () => {
+					this.generateExcelFileWithItems(rows, filename, customerName, currency);
+				};
+				script.onerror = () => {
+					frappe.msgprint(__("Failed to load Excel library. Please try again."));
+				};
+				document.head.appendChild(script);
+			} else {
+				this.generateExcelFileWithItems(rows, filename, customerName, currency);
+			}
+		},
+		async generateExcelFileWithItems(rows, filename, customerName, currency) {
+			try {
+				const workbook = new ExcelJS.Workbook();
+				const worksheet = workbook.addWorksheet("Reconciliation");
+
+				// Define headers with items columns
+				const headers = ["Date", "Invoice/Item", "Payment", "Qty", "Rate", "Debit (Debt)", "Credit (Payment)", "Balance"];
+
+				// Title rows (no borders)
+				worksheet.addRow([`Customer Reconciliation Report`]);
+				worksheet.addRow([`Customer: ${customerName}`]);
+				worksheet.addRow([`Currency: ${currency}`]);
+				worksheet.addRow([`Generated: ${new Date().toLocaleString()}`]);
+				worksheet.addRow([]); // Empty row
+
+				// Make title bold
+				worksheet.getRow(1).font = { bold: true, size: 14 };
+
+				// Header row with borders (normal font, no background)
+				const headerRow = worksheet.addRow(headers);
+				headerRow.eachCell((cell) => {
+					cell.border = {
+						top: { style: "thin", color: { argb: "FF000000" } },
+						left: { style: "thin", color: { argb: "FF000000" } },
+						bottom: { style: "thin", color: { argb: "FF000000" } },
+						right: { style: "thin", color: { argb: "FF000000" } }
+					};
+					cell.alignment = { horizontal: "center" };
+				});
+
+				// Data rows
+				rows.forEach((rowData) => {
+					if (rowData.isEmpty) {
+						worksheet.addRow([]);
+						return;
+					}
+
+					let row;
+					if (rowData.isFinalBalance) {
+						// Final balance row
+						row = worksheet.addRow([rowData.date, "", "", "", "", "", "", rowData.balance]);
+						row.eachCell((cell, colNumber) => {
+							cell.font = { bold: true };
+							cell.fill = {
+								type: "pattern",
+								pattern: "solid",
+								fgColor: { argb: "FFFFE699" }  // Yellow
+							};
+							cell.border = {
+								top: { style: "thin", color: { argb: "FF000000" } },
+								left: { style: "thin", color: { argb: "FF000000" } },
+								bottom: { style: "thin", color: { argb: "FF000000" } },
+								right: { style: "thin", color: { argb: "FF000000" } }
+							};
+						});
+					} else if (rowData.isItem) {
+						// Item row (indented, lighter background)
+						row = worksheet.addRow([
+							"",
+							"  → " + rowData.item_name,  // Indented item name
+							"",
+							rowData.qty,
+							rowData.rate,
+							rowData.amount,  // Item amount in debit column
+							"",
+							""
+						]);
+						row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+							if (colNumber <= headers.length) {
+								cell.fill = {
+									type: "pattern",
+									pattern: "solid",
+									fgColor: { argb: "FFF2F2F2" }  // Light grey for items
+								};
+								cell.border = {
+									top: { style: "thin", color: { argb: "FF000000" } },
+									left: { style: "thin", color: { argb: "FF000000" } },
+									bottom: { style: "thin", color: { argb: "FF000000" } },
+									right: { style: "thin", color: { argb: "FF000000" } }
+								};
+								cell.font = { italic: true, size: 10 };
+								if (colNumber >= 4) {
+									cell.alignment = { horizontal: "right" };
+								}
+							}
+						});
+					} else if (rowData.isInvoice) {
+						// Invoice row (bold, light blue background)
+						row = worksheet.addRow([
+							rowData.date,
+							rowData.invoice_name,
+							rowData.payment_name,
+							"",
+							"",
+							rowData.debit,
+							rowData.credit,
+							rowData.balance
+						]);
+						row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+							if (colNumber <= headers.length) {
+								cell.font = { bold: true };
+								cell.fill = {
+									type: "pattern",
+									pattern: "solid",
+									fgColor: { argb: "FFDCE6F1" }  // Light blue for invoices
+								};
+								cell.border = {
+									top: { style: "thin", color: { argb: "FF000000" } },
+									left: { style: "thin", color: { argb: "FF000000" } },
+									bottom: { style: "thin", color: { argb: "FF000000" } },
+									right: { style: "thin", color: { argb: "FF000000" } }
+								};
+								if (colNumber >= 4) {
+									cell.alignment = { horizontal: "right" };
+								}
+							}
+						});
+					} else {
+						// Payment or other row (normal)
+						row = worksheet.addRow([
+							rowData.date,
+							rowData.invoice_name,
+							rowData.payment_name,
+							"",
+							"",
+							rowData.debit,
+							rowData.credit,
+							rowData.balance
+						]);
+						row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+							if (colNumber <= headers.length) {
+								cell.border = {
+									top: { style: "thin", color: { argb: "FF000000" } },
+									left: { style: "thin", color: { argb: "FF000000" } },
+									bottom: { style: "thin", color: { argb: "FF000000" } },
+									right: { style: "thin", color: { argb: "FF000000" } }
+								};
+								if (colNumber >= 4) {
+									cell.alignment = { horizontal: "right" };
+								}
+							}
+						});
+					}
+
+					// Ensure all cells have borders
+					for (let c = 1; c <= headers.length; c++) {
+						const cell = row.getCell(c);
+						if (!cell.border) {
+							cell.border = {
+								top: { style: "thin", color: { argb: "FF000000" } },
+								left: { style: "thin", color: { argb: "FF000000" } },
+								bottom: { style: "thin", color: { argb: "FF000000" } },
+								right: { style: "thin", color: { argb: "FF000000" } }
+							};
+						}
+					}
+				});
+
+				// Set column widths
+				worksheet.columns = [
+					{ width: 12 },  // Date
+					{ width: 35 },  // Invoice/Item
+					{ width: 20 },  // Payment
+					{ width: 10 },  // Qty
+					{ width: 12 },  // Rate
+					{ width: 15 },  // Debit
+					{ width: 15 },  // Credit
+					{ width: 15 }   // Balance
+				];
+
+				// Generate and download file
+				const buffer = await workbook.xlsx.writeBuffer();
+				const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+				const url = window.URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.href = url;
+				a.download = filename;
+				a.click();
+				window.URL.revokeObjectURL(url);
+				
+				frappe.show_alert({
+					message: __("Excel file downloaded successfully"),
+					indicator: "green"
+				});
+			} catch (error) {
+				console.error("Excel export error:", error);
+				frappe.msgprint(__("Failed to export Excel file. Please try again."));
+			}
 		},
 		get_unallocated_payments() {
 			if (!this.pos_profile.posa_allow_reconcile_payments) return;

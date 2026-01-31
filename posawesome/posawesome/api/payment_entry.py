@@ -436,6 +436,68 @@ def get_unallocated_payments(customer, company, currency, mode_of_payment=None):
 
 
 @frappe.whitelist()
+def get_invoice_items(invoice_name, invoice_type="Sales Invoice"):
+    """
+    Get items for a specific invoice (Sales Invoice or POS Invoice).
+    Returns list of items with item_code, item_name, qty, rate, amount.
+    """
+    if not invoice_name:
+        return []
+    
+    doctype = invoice_type if invoice_type in ["Sales Invoice", "POS Invoice"] else "Sales Invoice"
+    child_table = f"tab{doctype} Item"
+    
+    try:
+        items = frappe.db.sql(
+            f"""
+            SELECT 
+                item_code,
+                item_name,
+                qty,
+                rate,
+                amount
+            FROM `{child_table}`
+            WHERE parent = %(invoice_name)s
+            ORDER BY idx
+            """,
+            {"invoice_name": invoice_name},
+            as_dict=True
+        )
+        return items
+    except Exception:
+        return []
+
+
+@frappe.whitelist()
+def get_customer_sverka_with_items(customer, company, currency=None):
+    """
+    GL Entry asosida mijoz sverka hisoboti - har bir invoice uchun itemlar bilan.
+    Export Excel uchun maxsus funksiya.
+    """
+    # Get base sverka data
+    result = get_customer_sverka(customer, company, currency)
+    
+    if not result:
+        return result
+    
+    transactions = result.get("transactions", [])
+    
+    # Add items for each invoice transaction
+    for trans in transactions:
+        trans["items"] = []
+        
+        voucher_type = trans.get("voucher_type")
+        voucher_no = trans.get("voucher_no")
+        
+        # Only get items for invoice type transactions (debit entries)
+        if voucher_type in ["Sales Invoice", "POS Invoice"] and trans.get("debit", 0) > 0:
+            items = get_invoice_items(voucher_no, voucher_type)
+            trans["items"] = items or []
+    
+    return result
+
+
+@frappe.whitelist()
 def get_customer_sverka(customer, company, currency=None):
     """
     GL Entry asosida mijoz sverka (reconciliation) hisoboti.
