@@ -1213,6 +1213,15 @@ export default {
 				const workbook = new ExcelJS.Workbook();
 				const worksheet = workbook.addWorksheet("Reconciliation");
 
+				// Helper function to format numbers with space separator (10 000.00)
+				const formatNumber = (num) => {
+					if (num === "" || num === null || num === undefined) return "";
+					const fixed = Number(num).toFixed(2);
+					const parts = fixed.split(".");
+					parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+					return parts.join(".");
+				};
+
 				// Define headers with items columns
 				const headers = ["Date", "Invoice/Item", "Payment", "Qty", "Rate", "Debit (Debt)", "Credit (Payment)", "Balance"];
 
@@ -1228,7 +1237,7 @@ export default {
 
 				// Header row with borders (normal font, no background)
 				const headerRow = worksheet.addRow(headers);
-				headerRow.eachCell((cell) => {
+				headerRow.eachCell((cell, colNumber) => {
 					cell.border = {
 						top: { style: "thin", color: { argb: "FF000000" } },
 						left: { style: "thin", color: { argb: "FF000000" } },
@@ -1236,6 +1245,14 @@ export default {
 						right: { style: "thin", color: { argb: "FF000000" } }
 					};
 					cell.alignment = { horizontal: "center" };
+					// Balance column header - light green background
+					if (colNumber === 8) {
+						cell.fill = {
+							type: "pattern",
+							pattern: "solid",
+							fgColor: { argb: "FFE2EFDA" }  // Light green
+						};
+					}
 				});
 
 				// Data rows
@@ -1248,7 +1265,7 @@ export default {
 					let row;
 					if (rowData.isFinalBalance) {
 						// Final balance row
-						row = worksheet.addRow([rowData.date, "", "", "", "", "", "", rowData.balance]);
+						row = worksheet.addRow([rowData.date, "", "", "", "", "", "", formatNumber(rowData.balance)]);
 						row.eachCell((cell, colNumber) => {
 							cell.font = { bold: true };
 							cell.fill = {
@@ -1270,8 +1287,8 @@ export default {
 							"  → " + rowData.item_name,  // Indented item name
 							"",
 							rowData.qty,
-							rowData.rate,
-							rowData.amount,  // Item amount in debit column
+							formatNumber(rowData.rate),
+							formatNumber(rowData.amount),  // Item amount in debit column
 							"",
 							""
 						]);
@@ -1302,9 +1319,9 @@ export default {
 							rowData.payment_name,
 							"",
 							"",
-							rowData.debit,
-							rowData.credit,
-							rowData.balance
+							formatNumber(rowData.debit),
+							formatNumber(rowData.credit),
+							formatNumber(rowData.balance)
 						]);
 						row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
 							if (colNumber <= headers.length) {
@@ -1314,6 +1331,14 @@ export default {
 									pattern: "solid",
 									fgColor: { argb: "FFDCE6F1" }  // Light blue for invoices
 								};
+								// Balance column - light green
+								if (colNumber === 8) {
+									cell.fill = {
+										type: "pattern",
+										pattern: "solid",
+										fgColor: { argb: "FFE2EFDA" }  // Light green for balance
+									};
+								}
 								cell.border = {
 									top: { style: "thin", color: { argb: "FF000000" } },
 									left: { style: "thin", color: { argb: "FF000000" } },
@@ -1333,9 +1358,9 @@ export default {
 							rowData.payment_name,
 							"",
 							"",
-							rowData.debit,
-							rowData.credit,
-							rowData.balance
+							formatNumber(rowData.debit),
+							formatNumber(rowData.credit),
+							formatNumber(rowData.balance)
 						]);
 						row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
 							if (colNumber <= headers.length) {
@@ -1345,6 +1370,14 @@ export default {
 									bottom: { style: "thin", color: { argb: "FF000000" } },
 									right: { style: "thin", color: { argb: "FF000000" } }
 								};
+								// Balance column - light green
+								if (colNumber === 8) {
+									cell.fill = {
+										type: "pattern",
+										pattern: "solid",
+										fgColor: { argb: "FFE2EFDA" }  // Light green for balance
+									};
+								}
 								if (colNumber >= 4) {
 									cell.alignment = { horizontal: "right" };
 								}
