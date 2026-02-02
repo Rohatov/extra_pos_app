@@ -125,6 +125,9 @@
 					</template>
 				</NavbarInfoGadgets>
 
+				<!-- Invoice Type Selector (between info gadgets and profile) -->
+				<slot name="invoice-type-selector"></slot>
+
 				<div :class="['profile-section', isRtl ? 'rtl-profile-section' : 'ltr-profile-section']">
 					<v-chip
 						variant="outlined"

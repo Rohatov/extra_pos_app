@@ -62,7 +62,12 @@ export default {
 
 	// Watch for invoice type change and emit
 	invoiceType() {
-		this.eventBus.emit("update_invoice_type", this.invoiceType);
+		// Don't emit if change came from navbar (to prevent loop)
+		if (!this._invoiceTypeFromNavbar) {
+			this.eventBus.emit("update_invoice_type", this.invoiceType);
+			// Also notify navbar to sync its display
+			this.eventBus.emit("set_invoice_type", this.invoiceType);
+		}
 	},
 	// Watch for additional discount and update percentage accordingly
 	additional_discount() {

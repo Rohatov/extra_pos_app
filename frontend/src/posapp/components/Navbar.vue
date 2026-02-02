@@ -21,6 +21,20 @@
 				/>
 			</template>
 
+			<!-- Slot for Invoice Type selector (between status and operator) -->
+			<template #invoice-type-selector>
+				<v-select
+					v-model="invoiceType"
+					:items="invoiceTypes"
+					density="compact"
+					hide-details
+					variant="outlined"
+					class="invoice-type-navbar-select"
+					:disabled="invoiceType === 'Return'"
+					@update:modelValue="onInvoiceTypeChange"
+				></v-select>
+			</template>
+
 			<!-- Slot for cache usage meter -->
 			<template #cache-usage-meter>
 				<CacheUsageMeter
@@ -223,6 +237,9 @@ export default {
 			freezeMsg: "",
 			snack: false,
 			snackText: "",
+			// Invoice Type data
+			invoiceType: "Invoice",
+			invoiceTypes: ["Invoice", "Order", "Quotation"],
 			snackColor: "success",
 			snackTimeout: DEFAULT_SNACK_TIMEOUT,
 			notificationQueue: [],
@@ -283,6 +300,7 @@ export default {
 			this.eventBus.off("unfreeze", this.handleUnfreeze);
 			this.eventBus.off("set_company", this.handleSetCompany);
 			this.eventBus.off("invoice_submission_failed", this.handleInvoiceSubmissionFailed);
+			this.eventBus.off("set_invoice_type", this.handleSetInvoiceType);
 		}
 	},
 	methods: {
@@ -364,7 +382,23 @@ export default {
 				this.eventBus.on("unfreeze", this.handleUnfreeze);
 				this.eventBus.on("set_company", this.handleSetCompany);
 				this.eventBus.on("invoice_submission_failed", this.handleInvoiceSubmissionFailed);
+				// Listen for invoice type changes from other components (e.g., Return)
+				this.eventBus.on("set_invoice_type", this.handleSetInvoiceType);
 			}
+			// Initialize invoice type based on POS profile
+			if (this.posProfile && this.posProfile.posa_default_sales_order) {
+				this.invoiceType = "Order";
+			}
+		},
+		// Handle invoice type change from navbar
+		onInvoiceTypeChange(newType) {
+			if (this.eventBus) {
+				this.eventBus.emit("update_invoice_type", newType);
+			}
+		},
+		// Handle invoice type set from other components (e.g., when loading return)
+		handleSetInvoiceType(type) {
+			this.invoiceType = type;
 		},
 		handleNavClick() {
 			this.drawer = !this.drawer;
@@ -850,5 +884,27 @@ export default {
 /* Snackbar positioning - scoped to POSApp */
 .posapp :deep(.v-snackbar) {
 	z-index: 9999;
+}
+
+/* Invoice Type Navbar Select */
+.invoice-type-navbar-select {
+	width: 100px;
+	margin: 0 8px;
+}
+
+.invoice-type-navbar-select :deep(.v-field) {
+	min-height: 32px !important;
+	padding: 0 8px;
+	font-size: 0.8rem;
+}
+
+.invoice-type-navbar-select :deep(.v-field__input) {
+	padding-top: 4px !important;
+	padding-bottom: 4px !important;
+	min-height: 32px !important;
+}
+
+.invoice-type-navbar-select :deep(.v-select__selection-text) {
+	font-size: 0.8rem;
 }
 </style>

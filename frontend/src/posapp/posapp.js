@@ -17,6 +17,39 @@ import { attachProfilerHelpers, initLongTaskObserver, isPerfEnabled } from "./ut
 
 attachProfilerHelpers();
 
+// Suppress frappe's default connection lost/online notifications
+// POS Awesome has its own status indicator in the navbar
+function suppressFrappeConnectionAlerts() {
+	if (typeof window !== "undefined") {
+		// Store original handlers to prevent frappe's alerts
+		const originalShowAlert = frappe.show_alert;
+		frappe.show_alert = function (opts, seconds, actions) {
+			// Check if this is a connection-related message
+			const message = typeof opts === "string" ? opts : opts?.message || "";
+			const indicator = typeof opts === "object" ? opts?.indicator : null;
+
+			// Skip connection lost/online notifications - POS has its own indicator
+			if (
+				message.toLowerCase().includes("connection lost") ||
+				message.toLowerCase().includes("connected to internet") ||
+				message.toLowerCase().includes("not connected")
+			) {
+				// Silently ignore - POS navbar shows connection status
+				return;
+			}
+			// Allow other alerts to pass through
+			return originalShowAlert.call(this, opts, seconds, actions);
+		};
+
+		// Also suppress the window online/offline events that frappe listens to
+		// by removing frappe's handlers and adding our own that do nothing
+		$(window).off("online.frappe offline.frappe");
+	}
+}
+
+// Call immediately
+suppressFrappeConnectionAlerts();
+
 // Expose Dexie globally for libraries that expect a global Dexie instance
 if (typeof window !== "undefined" && !window.Dexie) {
 	window.Dexie = Dexie;

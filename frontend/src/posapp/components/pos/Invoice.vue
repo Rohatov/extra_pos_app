@@ -27,25 +27,16 @@
 				>
 					{{ __("Invoices saved as POS Invoices") }}
 				</v-alert>
-				<!-- Top Row: Customer Selection and Invoice Type -->
-				<v-row align="center" class="items px-3 py-2">
-					<v-col :cols="pos_profile.posa_allow_sales_order ? 9 : 12" class="pb-0 pr-0">
-						<!-- Customer selection component -->
-						<Customer ref="customerComponent" />
-					</v-col>
-					<!-- Invoice Type Selection (Only shown if sales orders are allowed) -->
-					<v-col v-if="pos_profile.posa_allow_sales_order" cols="3" class="pb-4">
-						<v-select
-							density="compact"
-							hide-details
-							variant="solo"
-							color="primary"
-							class="sleek-field pos-themed-input"
-							:items="invoiceTypes"
-							:label="frappe._('Type')"
-							v-model="invoiceType"
-							:disabled="invoiceType == 'Return'"
-						></v-select>
+				<!-- Top Row: Customer Selection with Drafts -->
+				<v-row align="start" class="items px-3 py-2">
+					<v-col cols="12" class="pb-0 pr-0">
+						<!-- Customer selection with group filter and draft cards -->
+						<CustomerSelectorWithDrafts
+							ref="customerComponent"
+							:pos_profile="pos_profile"
+							:drafts="draftInvoices"
+							@load-draft="handleLoadDraft"
+						/>
 					</v-col>
 				</v-row>
 
@@ -318,7 +309,6 @@
 			@update:additional_discount_percentage="(val) => (additional_discount_percentage = val)"
 			@update_discount_umount="update_discount_umount"
 			@save-and-clear="save_and_clear_invoice"
-			@load-drafts="get_draft_invoices"
 			@select-order="get_draft_orders"
 			@cancel-sale="cancel_dialog = true"
 			@open-returns="open_returns"
@@ -333,6 +323,7 @@
 /* global frappe, __ */
 import format from "../../format";
 import Customer from "./Customer.vue";
+import CustomerSelectorWithDrafts from "./CustomerSelectorWithDrafts.vue";
 import DeliveryCharges from "./DeliveryCharges.vue";
 import PostingDateRow from "./PostingDateRow.vue";
 import MultiCurrencyRow from "./MultiCurrencyRow.vue";
@@ -438,11 +429,13 @@ export default {
 			invoiceHeight: null,
 			paymentVisible: false, // Track current payment view state
 			_busHandlers: {},
+			draftInvoices: [], // Draft invoices for quick access cards
 		};
 	},
 
 	components: {
 		Customer,
+		CustomerSelectorWithDrafts,
 		DeliveryCharges,
 		PostingDateRow,
 		MultiCurrencyRow,
@@ -500,6 +493,51 @@ export default {
 
 		focusAdditionalDiscountField() {
 			this.$refs.invoiceSummary?.focusAdditionalDiscountField?.();
+		},
+
+		// Load draft invoices for quick access cards
+		async loadDraftInvoicesForCards() {
+			if (!this.pos_opening_shift?.name || !this.pos_profile) {
+				this.draftInvoices = [];
+				return;
+			}
+			try {
+				const { message } = await frappe.call({
+					method: "posawesome.posawesome.api.invoices.get_draft_invoices",
+					args: {
+						pos_opening_shift: this.pos_opening_shift.name,
+						doctype: this.pos_profile.create_pos_invoice_instead_of_sales_invoice
+							? "POS Invoice"
+							: "Sales Invoice",
+					},
+				});
+				this.draftInvoices = message || [];
+			} catch (error) {
+				console.error("Error fetching draft invoices for cards:", error);
+				this.draftInvoices = [];
+			}
+		},
+
+		// Handle draft card click - load the selected draft invoice
+		handleLoadDraft(draft) {
+			if (!draft || !draft.name) {
+				return;
+			}
+			// Emit the load_invoice event which is handled by the Drafts component logic
+			this.eventBus.emit("load_invoice", draft);
+		},
+
+		// Handle invoice type change from Navbar
+		handleUpdateInvoiceType(newType) {
+			if (newType && this.invoiceType !== newType) {
+				// Set flag to prevent watcher from emitting back
+				this._invoiceTypeFromNavbar = true;
+				this.invoiceType = newType;
+				// Clear flag after tick
+				this.$nextTick(() => {
+					this._invoiceTypeFromNavbar = false;
+				});
+			}
 		},
 
 		initializeItemsHeaders() {
@@ -1449,13 +1487,20 @@ export default {
 
 			this.fetch_price_lists();
 			this.update_price_list();
+
+			// Load draft invoices for quick access cards
+			this.loadDraftInvoicesForCards();
 		},
 		handleClearInvoice() {
 			this.clear_invoice();
 			this.eventBus.emit("focus_item_search");
+			// Refresh draft cards after clearing
+			this.loadDraftInvoicesForCards();
 		},
 		handleLoadInvoice(data) {
 			this.load_invoice(data);
+			// Refresh draft cards after loading a draft
+			this.loadDraftInvoicesForCards();
 		},
 		handleLoadOrder(data) {
 			this.new_order(data);
@@ -1551,6 +1596,7 @@ export default {
 			reset_posting_date: this.handleResetPostingDate,
 			calc_uom: this.calc_uom,
 			show_payment: this.handleShowPayment,
+			update_invoice_type: this.handleUpdateInvoiceType,
 		};
 
 		Object.entries(this._busHandlers).forEach(([eventName, handler]) => {

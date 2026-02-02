@@ -112,19 +112,6 @@
 							{{ __("Save & Clear") }}
 						</v-btn>
 					</v-col>
-					<v-col cols="6">
-						<v-btn
-							block
-							color="warning"
-							theme="dark"
-							prepend-icon="mdi-file-document"
-							@click="handleLoadDrafts"
-							class="white-text-btn summary-btn"
-							:loading="loadDraftsLoading"
-						>
-							{{ __("Load Drafts") }}
-						</v-btn>
-					</v-col>
 					<v-col cols="6" v-if="pos_profile.custom_allow_select_sales_order == 1">
 						<v-btn
 							block
@@ -230,7 +217,6 @@ export default {
 		return {
 			// Loading states for better UX
 			saveLoading: false,
-			loadDraftsLoading: false,
 			selectOrderLoading: false,
 			cancelLoading: false,
 			returnsLoading: false,
@@ -248,7 +234,6 @@ export default {
 		"update:additional_discount_percentage",
 		"update_discount_umount",
 		"save-and-clear",
-		"load-drafts",
 		"select-order",
 		"cancel-sale",
 		"open-returns",
@@ -335,15 +320,6 @@ export default {
 				await this.$emit("save-and-clear");
 			} finally {
 				this.saveLoading = false;
-			}
-		},
-
-		async handleLoadDrafts() {
-			this.loadDraftsLoading = true;
-			try {
-				await this.$emit("load-drafts");
-			} finally {
-				this.loadDraftsLoading = false;
 			}
 		},
 
