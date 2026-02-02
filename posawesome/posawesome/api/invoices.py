@@ -1174,7 +1174,8 @@ def get_draft_invoices(pos_opening_shift, doctype="Sales Invoice"):
     )
     data = []
     for invoice in invoices_list:
-        data.append(frappe.get_cached_doc(doctype, invoice["name"]))
+        # Use get_doc instead of get_cached_doc to always get fresh data
+        data.append(frappe.get_doc(doctype, invoice["name"]))
     return data
 
 

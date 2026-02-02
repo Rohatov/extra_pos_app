@@ -1523,28 +1523,41 @@ export default {
 	// Cancel the current invoice, optionally delete from backend
 	async cancel_invoice() {
 		const doc = this.get_invoice_doc();
+		const invoiceName = doc.name; // Store the name before clearing
 		this.invoiceType = this.pos_profile.posa_default_sales_order ? "Order" : "Invoice";
 		this.invoiceTypes = ["Invoice", "Order", "Quotation"];
 		this.posting_date = frappe.datetime.nowdate();
 		var vm = this;
-		if (doc.name && this.pos_profile.posa_allow_delete) {
-			await frappe.call({
-				method: "posawesome.posawesome.api.invoices.delete_invoice",
-				args: { invoice: doc.name },
-				async: true,
-				callback: function (r) {
-					if (r.message) {
-						vm.eventBus.emit("show_message", {
-							text: r.message,
-							color: "warning",
-						});
-					}
-				},
-			});
+
+		// Delete the invoice from backend if it exists and deletion is allowed
+		if (invoiceName && this.pos_profile.posa_allow_delete) {
+			try {
+				const r = await frappe.call({
+					method: "posawesome.posawesome.api.invoices.delete_invoice",
+					args: { invoice: invoiceName },
+					async: true,
+				});
+				if (r && r.message) {
+					vm.eventBus.emit("show_message", {
+						text: r.message,
+						color: "warning",
+					});
+				}
+			} catch (error) {
+				console.error("Error deleting invoice:", error);
+				vm.eventBus.emit("show_message", {
+					text: __("Error deleting invoice"),
+					color: "error",
+				});
+			}
 		}
+
 		this.clear_invoice();
 		this.eventBus.emit("focus_item_search");
 		this.cancel_dialog = false;
+
+		// Refresh draft cards after canceling/deleting - await to ensure UI updates
+		await this.loadDraftInvoicesForCards();
 	},
 
 	// Load an invoice (or return invoice) from data, set all fields accordingly

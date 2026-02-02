@@ -578,6 +578,7 @@ def get_customer_sverka(customer, company, currency=None):
         mode_of_payment = None
         description = ""
         trans_type = "other"
+        payment_source = ""  # Track where payment came from
 
         if voucher_type == "Sales Invoice":
             is_return = frappe.db.get_value("Sales Invoice", voucher_no, "is_return")
@@ -598,16 +599,19 @@ def get_customer_sverka(customer, company, currency=None):
                 if is_return:
                     trans_type = "credit_note"
                     payment_name = voucher_no
+                    payment_source = "Credit Note"
                     description = _("Kredit nota")
                 else:
                     # Direct payment on Sales Invoice
                     trans_type = "direct_payment"
                     payment_name = voucher_no  # Same as invoice - direct payment
+                    payment_source = "Sales Invoice"
                     description = _("To'g'ridan-to'g'ri to'lov")
 
         elif voucher_type == "Payment Entry":
             payment_name = voucher_no
             trans_type = "payment"
+            payment_source = "Payment Entry"
             mode_of_payment = frappe.db.get_value("Payment Entry", voucher_no, "mode_of_payment")
             # Get linked invoice from payment
             linked_invs = frappe.get_all(
@@ -622,6 +626,7 @@ def get_customer_sverka(customer, company, currency=None):
         elif voucher_type == "Journal Entry":
             payment_name = voucher_no
             trans_type = "journal"
+            payment_source = "Journal Entry"
             # Check if it references an invoice
             if gle.against_voucher_type == "Sales Invoice" and gle.against_voucher:
                 invoice_name = gle.against_voucher
@@ -635,6 +640,7 @@ def get_customer_sverka(customer, company, currency=None):
             else:
                 trans_type = "pos_payment"
                 payment_name = voucher_no
+                payment_source = "POS Invoice"
                 description = _("POS to'lov")
 
         else:
@@ -653,6 +659,7 @@ def get_customer_sverka(customer, company, currency=None):
             "currency": gle.currency or frappe.get_cached_value("Company", company, "default_currency"),
             "type": trans_type,
             "description": description,
+            "payment_source": payment_source,  # Sales Invoice, Payment Entry, Journal Entry, POS Invoice, Credit Note
         })
 
     # Calculate running balance

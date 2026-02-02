@@ -1172,18 +1172,20 @@ export default {
 
 				// Build rows with items as separate rows
 				const rows = [];
-				
+
 				for (const trans of transactions) {
 					const isInvoice = trans.debit > 0 && trans.voucher_type && trans.voucher_type.includes("Invoice");
 					const isPayment = trans.credit > 0 && !isInvoice;
 
 					// Main transaction row (Invoice or Payment)
+					// Column 2: payment_doc shows the actual payment document number (ACC-PAY-xxx, ACC-SINV-xxx for direct payments)
 					const mainRow = {
 						isInvoice: isInvoice,
 						isPayment: isPayment,
 						isItem: false,
 						invoice_name: trans.invoice_name || "",
 						payment_name: trans.payment_name || "",
+						payment_doc: isPayment ? (trans.voucher_no || trans.payment_name || "") : "",  // Actual payment document number
 						item_name: "",
 						qty: "",
 						rate: "",
@@ -1260,8 +1262,8 @@ export default {
 					return parts.join(".");
 				};
 
-				// Define headers - Invoice, Item columns separate
-				const headers = ["Invoice", "Item", "Qty", "Rate", "Debit (Qarz)", "Kredit (To'lov)", "Qoldiq"];
+				// Define headers - Invoice, Payment Doc, then Item details, then amounts
+				const headers = ["Faktura", "To'lov hujjati", "Item", "Qty", "Rate", "Debit (Qarz)", "Kredit (To'lov)", "Qoldiq"];
 
 				// Title rows (no borders)
 				worksheet.addRow([`Customer Reconciliation Report`]);
@@ -1284,17 +1286,25 @@ export default {
 					};
 					cell.alignment = { horizontal: "center" };
 					cell.font = { bold: true };
-					// Balance column header - light green background
-					if (colNumber === 7) {
+					// Balance column header (8) - light green background
+					if (colNumber === 8) {
 						cell.fill = {
 							type: "pattern",
 							pattern: "solid",
 							fgColor: { argb: "FFE2EFDA" }
 						};
 					}
+					// Payment source column header (2) - light blue background
+					if (colNumber === 2) {
+						cell.fill = {
+							type: "pattern",
+							pattern: "solid",
+							fgColor: { argb: "FFDCE6F1" }
+						};
+					}
 				});
 
-				// Data rows
+				// Data rows - Column order: Invoice, Payment Source, Item, Qty, Rate, Debit, Credit, Balance
 				rows.forEach((rowData) => {
 					if (rowData.isEmpty) {
 						worksheet.addRow([]);
@@ -1304,7 +1314,7 @@ export default {
 					let row;
 					if (rowData.isFinalBalance) {
 						// Final balance row
-						row = worksheet.addRow([rowData.label, "", "", "", "", "", formatNumber(rowData.balance)]);
+						row = worksheet.addRow([rowData.label, "", "", "", "", "", "", formatNumber(rowData.balance)]);
 						row.eachCell((cell, colNumber) => {
 							cell.font = { bold: true };
 							cell.fill = {
@@ -1323,6 +1333,7 @@ export default {
 						// Item row - separate row for each item
 						row = worksheet.addRow([
 							"",  // No invoice name
+							"",  // No payment source
 							rowData.item_name,
 							rowData.qty,
 							formatNumber(rowData.rate),
@@ -1344,7 +1355,7 @@ export default {
 									right: { style: "thin", color: { argb: "FF000000" } }
 								};
 								cell.font = { italic: true };
-								if (colNumber >= 3) {
+								if (colNumber >= 4) {
 									cell.alignment = { horizontal: "right" };
 								}
 							}
@@ -1353,6 +1364,7 @@ export default {
 						// Invoice row
 						row = worksheet.addRow([
 							rowData.invoice_name,
+							rowData.payment_doc || "",  // Payment document number (empty for debit/invoice rows)
 							"",  // Items will be in separate rows
 							"",
 							"",
@@ -1368,23 +1380,24 @@ export default {
 									bottom: { style: "thin", color: { argb: "FF000000" } },
 									right: { style: "thin", color: { argb: "FF000000" } }
 								};
-								// Balance column - light green
-								if (colNumber === 7) {
+								// Balance column (8) - light green
+								if (colNumber === 8) {
 									cell.fill = {
 										type: "pattern",
 										pattern: "solid",
 										fgColor: { argb: "FFE2EFDA" }
 									};
 								}
-								if (colNumber >= 3) {
+								if (colNumber >= 4) {
 									cell.alignment = { horizontal: "right" };
 								}
 							}
 						});
 					} else if (rowData.isPayment) {
-						// Payment row
+						// Payment row - show payment document number in column 2
 						row = worksheet.addRow([
-							rowData.payment_name,
+							rowData.invoice_name || "",  // Invoice linked to this payment (if any)
+							rowData.payment_doc || rowData.payment_name || "",  // Payment document number (ACC-PAY-xxx, ACC-SINV-xxx)
 							"",
 							"",
 							"",
@@ -1400,15 +1413,23 @@ export default {
 									bottom: { style: "thin", color: { argb: "FF000000" } },
 									right: { style: "thin", color: { argb: "FF000000" } }
 								};
-								// Balance column - light green
-								if (colNumber === 7) {
+								// Balance column (8) - light green
+								if (colNumber === 8) {
 									cell.fill = {
 										type: "pattern",
 										pattern: "solid",
 										fgColor: { argb: "FFE2EFDA" }
 									};
 								}
-								if (colNumber >= 3) {
+								// Payment doc column (2) - light blue for payments
+								if (colNumber === 2 && rowData.payment_doc) {
+									cell.fill = {
+										type: "pattern",
+										pattern: "solid",
+										fgColor: { argb: "FFDCE6F1" }  // Light blue
+									};
+								}
+								if (colNumber >= 4) {
 									cell.alignment = { horizontal: "right" };
 								}
 							}
@@ -1418,6 +1439,7 @@ export default {
 						const displayName = rowData.invoice_name || rowData.payment_name || "";
 						row = worksheet.addRow([
 							displayName,
+							rowData.payment_doc || "",  // Payment document number
 							"",
 							"",
 							"",
@@ -1433,15 +1455,15 @@ export default {
 									bottom: { style: "thin", color: { argb: "FF000000" } },
 									right: { style: "thin", color: { argb: "FF000000" } }
 								};
-								// Balance column - light green
-								if (colNumber === 7) {
+								// Balance column (8) - light green
+								if (colNumber === 8) {
 									cell.fill = {
 										type: "pattern",
 										pattern: "solid",
 										fgColor: { argb: "FFE2EFDA" }
 									};
 								}
-								if (colNumber >= 3) {
+								if (colNumber >= 4) {
 									cell.alignment = { horizontal: "right" };
 								}
 							}
@@ -1462,9 +1484,10 @@ export default {
 					}
 				});
 
-				// Set column widths
+				// Set column widths - matching new order
 				worksheet.columns = [
 					{ width: 30 },  // Invoice
+					{ width: 18 },  // To'lov manbai (Payment Source)
 					{ width: 25 },  // Item
 					{ width: 10 },  // Qty
 					{ width: 12 },  // Rate
