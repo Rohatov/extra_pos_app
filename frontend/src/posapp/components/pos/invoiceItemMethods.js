@@ -1811,6 +1811,8 @@ export default {
 		} else {
 			this.clear_invoice();
 			this.eventBus.emit("focus_item_search");
+			// Refresh draft cards after saving to show the new draft immediately
+			await this.loadDraftInvoicesForCards();
 			return old_invoice;
 		}
 	},
