@@ -28,8 +28,8 @@
 					{{ __("Invoices saved as POS Invoices") }}
 				</v-alert>
 				<!-- Top Row: Customer Selection with Drafts -->
-				<v-row align="start" class="items px-3 py-2">
-					<v-col cols="12" class="pb-0 pr-0">
+				<v-row align="start" class="px-3 py-3">
+					<v-col cols="12" class="pb-2">
 						<!-- Customer selection with group filter and draft cards -->
 						<CustomerSelectorWithDrafts
 							ref="customerComponent"
@@ -116,11 +116,11 @@
 						<v-text-field
 							ref="itemSearchField"
 							v-model="itemSearch"
-							density="compact"
-							variant="solo"
+							density="comfortable"
+							variant="outlined"
 							color="primary"
 							class="item-search-field pos-themed-input"
-							:label="__('Search items or barcode')"
+							:placeholder="__('Search items or barcode...')"
 							prepend-inner-icon="mdi-magnify"
 							hide-details
 							clearable
@@ -340,7 +340,7 @@ import { useCustomersStore } from "../../stores/customersStore.js";
 import { storeToRefs } from "pinia";
 import stockCoordinator from "../../utils/stockCoordinator.js";
 import { parseBooleanSetting } from "../../utils/stock.js";
-import { isOffline } from "../../../offline/index.js";
+import { isOffline, getDraftInvoices, setDraftInvoices } from "../../../offline/index.js";
 
 export default {
 	name: "POSInvoice",
@@ -501,6 +501,13 @@ export default {
 				this.draftInvoices = [];
 				return;
 			}
+			
+			// If offline, load from local cache
+			if (isOffline()) {
+				this.draftInvoices = getDraftInvoices() || [];
+				return;
+			}
+			
 			try {
 				const { message } = await frappe.call({
 					method: "posawesome.posawesome.api.invoices.get_draft_invoices",
@@ -512,9 +519,12 @@ export default {
 					},
 				});
 				this.draftInvoices = message || [];
+				// Save drafts to local cache for offline access
+				setDraftInvoices(this.draftInvoices);
 			} catch (error) {
 				console.error("Error fetching draft invoices for cards:", error);
-				this.draftInvoices = [];
+				// Fallback to cached drafts on error
+				this.draftInvoices = getDraftInvoices() || [];
 			}
 		},
 
@@ -1814,9 +1824,26 @@ export default {
 
 .item-search-field {
 	width: 100%;
-	max-width: 320px;
-	flex: 1 1 240px;
+	max-width: 400px;
+	flex: 1 1 280px;
 	margin-right: auto;
+	border-radius: 8px;
+}
+
+.item-search-field :deep(.v-field) {
+	border-radius: 8px !important;
+	background: var(--pos-input-bg, rgba(255, 255, 255, 0.05)) !important;
+	border: 1px solid var(--pos-border, rgba(255, 255, 255, 0.2)) !important;
+}
+
+.item-search-field :deep(.v-field__input) {
+	font-size: 0.95rem !important;
+	padding: 10px 12px !important;
+}
+
+.item-search-field :deep(.v-field__input::placeholder) {
+	color: var(--pos-text-secondary, #888) !important;
+	opacity: 0.8 !important;
 }
 
 .column-selector-btn {
@@ -1825,7 +1852,7 @@ export default {
 
 .items-table-wrapper {
 	position: relative;
-	margin-top: var(--dynamic-sm);
+	margin-top: 28px;
 	/* Override parent padding to make table full-width */
 	margin-left: calc(-1 * var(--dynamic-sm));
 	margin-right: calc(-1 * var(--dynamic-sm));

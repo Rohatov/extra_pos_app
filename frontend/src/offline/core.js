@@ -144,6 +144,7 @@ export const KEY_TABLE_MAP = {
 	offline_invoices: "queue",
 	offline_customers: "queue",
 	offline_payments: "queue",
+	draft_invoices: "queue",
 	item_details_cache: "cache",
 	customer_storage: "cache",
 	local_stock_cache: "local_stock",

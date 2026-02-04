@@ -382,3 +382,73 @@ export async function syncOfflinePayments() {
 
 	return { pending: failures.length, synced };
 }
+
+// Draft invoices for offline support
+export function saveDraftInvoice(invoice) {
+	if (!invoice || !invoice.name) {
+		return;
+	}
+	const key = "draft_invoices";
+	const entries = memory.draft_invoices || [];
+	
+	// Check if draft already exists
+	const existingIndex = entries.findIndex((d) => d.name === invoice.name);
+	
+	let cleanInvoice;
+	try {
+		cleanInvoice = JSON.parse(JSON.stringify(invoice));
+	} catch (e) {
+		console.error("Failed to serialize draft invoice", e);
+		return;
+	}
+	
+	if (existingIndex !== -1) {
+		// Update existing draft
+		entries[existingIndex] = cleanInvoice;
+	} else {
+		// Add new draft
+		entries.push(cleanInvoice);
+	}
+	
+	memory.draft_invoices = entries;
+	persist(key, memory.draft_invoices);
+}
+
+export function getDraftInvoices() {
+	return memory.draft_invoices || [];
+}
+
+export function clearDraftInvoices() {
+	memory.draft_invoices = [];
+	persist("draft_invoices", memory.draft_invoices);
+}
+
+export function deleteDraftInvoice(invoiceName) {
+	if (!invoiceName) return;
+	
+	const entries = memory.draft_invoices || [];
+	const index = entries.findIndex((d) => d.name === invoiceName);
+	
+	if (index !== -1) {
+		entries.splice(index, 1);
+		memory.draft_invoices = entries;
+		persist("draft_invoices", memory.draft_invoices);
+	}
+}
+
+export function setDraftInvoices(invoices) {
+	if (!Array.isArray(invoices)) {
+		return;
+	}
+	
+	let cleanInvoices;
+	try {
+		cleanInvoices = JSON.parse(JSON.stringify(invoices));
+	} catch (e) {
+		console.error("Failed to serialize draft invoices", e);
+		return;
+	}
+	
+	memory.draft_invoices = cleanInvoices;
+	persist("draft_invoices", memory.draft_invoices);
+}

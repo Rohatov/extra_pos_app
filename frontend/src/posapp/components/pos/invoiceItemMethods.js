@@ -9,6 +9,8 @@ import {
 	getOfflineCustomers,
 	getTaxTemplate,
 	getTaxInclusiveSetting,
+	saveDraftInvoice,
+	deleteDraftInvoice,
 } from "../../../offline/index.js";
 
 // Import composables
@@ -1529,8 +1531,13 @@ export default {
 		this.posting_date = frappe.datetime.nowdate();
 		var vm = this;
 
+		// Delete from offline cache first
+		if (invoiceName) {
+			deleteDraftInvoice(invoiceName);
+		}
+
 		// Delete the invoice from backend if it exists and deletion is allowed
-		if (invoiceName && this.pos_profile.posa_allow_delete) {
+		if (invoiceName && this.pos_profile.posa_allow_delete && !isOffline()) {
 			try {
 				const r = await frappe.call({
 					method: "posawesome.posawesome.api.invoices.delete_invoice",
@@ -1578,6 +1585,11 @@ export default {
 			customer: data.customer,
 			items_count: data.items ? data.items.length : 0,
 		});
+
+		// Remove from offline draft cache when loading (it's now being edited)
+		if (data.name) {
+			deleteDraftInvoice(data.name);
+		}
 
 		this.clear_invoice();
 		if (data?.is_return) {
@@ -2468,9 +2480,20 @@ export default {
 	// Update invoice in backend
 	async update_invoice(doc) {
 		if (isOffline()) {
-			// When offline, simply merge the passed doc with the current invoice_doc
-			// to allow offline invoice creation without server calls
-			this.invoice_doc = Object.assign({}, this.invoice_doc || {}, doc);
+			// When offline, merge the passed doc with the current invoice_doc
+			// and save to local cache for offline access
+			const offlineName = doc.name || `offline-draft-${Date.now()}`;
+			const offlineDoc = Object.assign({}, this.invoice_doc || {}, doc, {
+				name: offlineName,
+				customer_name: doc.customer_name || this.customer_info?.customer_name || doc.customer,
+				grand_total: doc.grand_total || this.grand_total || 0,
+				posting_date: doc.posting_date || this.posting_date || frappe.datetime.nowdate(),
+			});
+			this.invoice_doc = offlineDoc;
+			
+			// Save to offline cache for draft cards
+			saveDraftInvoice(offlineDoc);
+			
 			return this.invoice_doc;
 		}
 

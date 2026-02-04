@@ -97,6 +97,11 @@ export {
 	syncOfflineInvoices,
 	syncOfflineCustomers,
 	syncOfflinePayments,
+	saveDraftInvoice,
+	getDraftInvoices,
+	clearDraftInvoices,
+	deleteDraftInvoice,
+	setDraftInvoices,
 } from "./sync.js";
 
 // Items exports

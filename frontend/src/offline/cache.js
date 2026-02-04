@@ -12,12 +12,13 @@ import Dexie from "dexie/dist/dexie.mjs";
 const CACHE_STRUCTURE = {
 	items: ["item_code", "item_name", "item_group", "barcodes", "serials", "batches"],
 	item_prices: ["price_list", "item_code", "price_list_rate", "timestamp"],
-	customers: ["name", "customer_name", "mobile_no", "email_id", "tax_id"],
+	customers: ["name", "customer_name", "mobile_no", "email_id", "tax_id", "customer_group"],
 	local_stock: ["key", "value"],
 	coupons: ["code", "valid_from", "valid_upto"],
 	item_groups: ["name", "parent_item_group"],
 	translations: ["key", "language"],
 	pricing_rules: ["snapshot", "context", "stale_at"],
+	draft_invoices: ["name", "customer", "customer_name", "grand_total", "posting_date"],
 };
 
 function hashStructure(structure) {
@@ -62,6 +63,7 @@ export const memory = {
 	offline_invoices: [],
 	offline_customers: [],
 	offline_payments: [],
+	draft_invoices: [],
 	pos_last_sync_totals: { pending: 0, synced: 0, drafted: 0 },
 	uom_cache: {},
 	offers_cache: [],
@@ -292,6 +294,7 @@ export async function setCustomerStorage(customers) {
 			email_id: c.email_id,
 			primary_address: c.primary_address,
 			tax_id: c.tax_id,
+			customer_group: c.customer_group,
 		}));
 		const CHUNK_SIZE = 1000;
 		await db.transaction("rw", db.table("customers"), async () => {

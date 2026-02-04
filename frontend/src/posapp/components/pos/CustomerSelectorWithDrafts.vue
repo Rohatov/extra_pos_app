@@ -1,17 +1,17 @@
 <template>
 	<div class="customer-drafts-container">
-		<!-- Top Row: Customer Search (left) and Customer Group (right) - HORIZONTAL -->
-		<v-row no-gutters align="center" class="customer-selection-row">
-			<!-- Customer Search (Left side - larger ~65%) -->
-			<v-col cols="8" sm="8" class="pr-2">
-				<Skeleton v-if="loadingCustomers" height="40" class="w-100" />
+		<!-- Row 1: Customer Search and Customer Group side by side -->
+		<div class="customer-selection-row">
+			<!-- Customer Search -->
+			<div class="customer-search-section">
+				<Skeleton v-if="loadingCustomers" height="44" class="w-100" />
 				<v-autocomplete
 					v-else
 					ref="customerDropdown"
 					class="customer-autocomplete-compact pos-themed-input"
-					density="compact"
+					density="comfortable"
 					clearable
-					variant="solo"
+					variant="outlined"
 					color="primary"
 					:label="frappe._('Customer search')"
 					v-model="internalCustomer"
@@ -33,10 +33,11 @@
 					<!-- Edit icon (left) -->
 					<template #prepend-inner>
 						<v-icon
-							class="icon-button small-icon"
-							size="18"
+							class="icon-button"
+							size="20"
 							@mousedown.prevent.stop
 							@click.stop="edit_customer"
+							title="Edit customer"
 						>
 							mdi-account-edit
 						</v-icon>
@@ -45,38 +46,46 @@
 					<!-- Add icon (right) -->
 					<template #append-inner>
 						<v-icon
-							class="icon-button small-icon"
-							size="18"
+							class="icon-button"
+							size="20"
 							@mousedown.prevent.stop
 							@click.stop="new_customer"
+							title="Add new customer"
 						>
-							mdi-plus
+							mdi-plus-circle
 						</v-icon>
 					</template>
 
 					<!-- Dropdown display -->
 					<template #item="{ props, item }">
-						<v-list-item v-bind="props" density="compact">
-							<v-list-item-subtitle v-if="item.raw.customer_name !== item.raw.name" class="text-caption">
-								ID: {{ item.raw.name }}
-							</v-list-item-subtitle>
-							<v-list-item-subtitle v-if="item.raw.mobile_no" class="text-caption">
-								{{ item.raw.mobile_no }}
-							</v-list-item-subtitle>
+						<v-list-item v-bind="props" class="customer-list-item">
+							<template #subtitle>
+								<div class="customer-item-details">
+									<span v-if="item.raw.customer_name !== item.raw.name" class="customer-id">
+										ID: {{ item.raw.name }}
+									</span>
+									<span v-if="item.raw.mobile_no" class="customer-mobile">
+										📱 {{ item.raw.mobile_no }}
+									</span>
+									<span v-if="item.raw.customer_group" class="customer-group-badge">
+										{{ item.raw.customer_group }}
+									</span>
+								</div>
+							</template>
 						</v-list-item>
 					</template>
 				</v-autocomplete>
-			</v-col>
+			</div>
 
-			<!-- Customer Group Filter (Right side - smaller ~35%) -->
-			<v-col cols="4" sm="4">
+			<!-- Customer Group Filter -->
+			<div class="customer-group-section">
 				<v-select
 					v-model="selectedGroup"
 					:items="customerGroupOptions"
 					item-title="label"
 					item-value="value"
-					density="compact"
-					variant="solo"
+					density="comfortable"
+					variant="outlined"
 					color="primary"
 					class="customer-group-select pos-themed-input"
 					:label="__('Customer Group')"
@@ -84,24 +93,19 @@
 					@update:modelValue="onGroupChange"
 				>
 				</v-select>
-			</v-col>
-		</v-row>
+			</div>
+		</div>
 
-		<!-- Draft Cards Section (Below the search row) - HORIZONTAL SCROLL -->
-		<div v-if="drafts.length > 0" class="drafts-section">
-			<div class="drafts-scroll-container">
-				<div class="drafts-cards-row">
-					<div
-						v-for="draft in drafts"
-						:key="draft.name"
-						class="draft-card"
-						@click="loadDraft(draft)"
-					>
-						<div class="draft-card-content">
-							<div class="draft-customer-name">{{ draft.customer_name || draft.customer || __('No Customer') }}</div>
-						</div>
-					</div>
-				</div>
+		<!-- Row 2: Draft Cards - only shown when drafts exist -->
+		<div v-if="drafts.length > 0" class="drafts-row">
+			<div
+				v-for="draft in drafts"
+				:key="draft.name"
+				class="draft-card"
+				@click="loadDraft(draft)"
+				:title="draft.customer_name || draft.customer || __('No Customer')"
+			>
+				{{ draft.customer_name || draft.customer || __('No Customer') }}
 			</div>
 		</div>
 
@@ -115,43 +119,64 @@
 	width: 100%;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 12px;
+	overflow: visible;
 }
 
+/* Row 1: Customer search + Customer Group */
 .customer-selection-row {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
 	width: 100%;
+	overflow: visible;
 }
 
-.customer-autocomplete-compact {
-	width: 100%;
-	border-radius: 8px;
-	background-color: var(--pos-input-bg);
+.customer-search-section {
+	flex: 1;
+	min-width: 0;
+	overflow: visible;
 }
 
-.customer-autocomplete-compact :deep(.v-field) {
-	min-height: 40px !important;
+.customer-group-section {
+	flex: 0 0 220px;
+	overflow: visible;
 }
 
-.customer-autocomplete-compact :deep(.v-field__input) {
-	padding-top: 4px !important;
-	padding-bottom: 4px !important;
-	font-size: 0.875rem !important;
-}
-
+.customer-autocomplete-compact,
 .customer-group-select {
 	width: 100%;
-	border-radius: 8px;
-	background-color: var(--pos-input-bg);
+}
+
+/* Clear distinct borders for inputs */
+.customer-autocomplete-compact :deep(.v-field) {
+	border-radius: 6px !important;
+	border: 2px solid rgba(255, 255, 255, 0.4) !important;
+	background: rgba(255, 255, 255, 0.05) !important;
+	min-height: 48px !important;
+}
+
+.customer-autocomplete-compact :deep(.v-field:hover) {
+	border-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.customer-autocomplete-compact :deep(.v-field--focused) {
+	border-color: var(--v-theme-primary) !important;
 }
 
 .customer-group-select :deep(.v-field) {
-	min-height: 40px !important;
+	border-radius: 6px !important;
+	border: 2px solid rgba(255, 255, 255, 0.4) !important;
+	background: rgba(255, 255, 255, 0.05) !important;
+	min-height: 48px !important;
 }
 
-.customer-group-select :deep(.v-field__input) {
-	padding-top: 4px !important;
-	padding-bottom: 4px !important;
-	font-size: 0.875rem !important;
+.customer-group-select :deep(.v-field:hover) {
+	border-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.customer-group-select :deep(.v-field--focused) {
+	border-color: var(--v-theme-primary) !important;
 }
 
 .icon-button {
@@ -162,121 +187,81 @@
 
 .icon-button:hover {
 	opacity: 1;
-	color: var(--v-theme-primary);
+	transform: scale(1.1);
 }
 
-.small-icon {
-	font-size: 18px !important;
+/* Customer dropdown item styles */
+.customer-list-item {
+	padding: 8px 16px !important;
 }
 
-/* Drafts Section Styles */
-.drafts-section {
-	background: var(--pos-card-bg, #1a1a1a);
-	border-radius: 8px;
-	padding: 8px 12px;
-	margin-top: 4px;
-}
-
-.drafts-header {
+.customer-item-details {
 	display: flex;
-	align-items: center;
-	margin-bottom: 8px;
-	color: var(--pos-text-secondary, #888);
-	font-size: 0.75rem;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 4px;
+	font-size: 0.8rem;
 }
 
-.drafts-title {
+.customer-id {
+	color: var(--pos-text-secondary, #888);
+}
+
+.customer-mobile {
+	color: var(--pos-text-secondary, #888);
+}
+
+.customer-group-badge {
+	background: var(--v-theme-primary);
+	color: white;
+	padding: 2px 8px;
+	border-radius: 12px;
+	font-size: 0.7rem;
 	font-weight: 500;
 }
 
-.drafts-scroll-container {
-	overflow-x: auto;
-	overflow-y: hidden;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: thin;
-	scrollbar-color: var(--v-theme-primary) transparent;
-}
-
-.drafts-scroll-container::-webkit-scrollbar {
-	height: 4px;
-}
-
-.drafts-scroll-container::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.drafts-scroll-container::-webkit-scrollbar-thumb {
-	background: var(--v-theme-primary);
-	border-radius: 2px;
-}
-
-.drafts-cards-row {
+/* Row 2: Draft Cards */
+.drafts-row {
 	display: flex;
-	gap: 8px;
-	padding-bottom: 4px;
+	flex-wrap: wrap;
+	gap: 10px;
+	padding: 10px 0;
+	margin-top: 4px;
+	border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .draft-card {
-	flex-shrink: 0;
-	min-width: 120px;
-	max-width: 150px;
-	background: linear-gradient(135deg, #f5e642 0%, #d4c12a 100%);
-	border-radius: 8px;
-	padding: 10px 12px;
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	border-radius: 6px;
+	padding: 8px 16px;
 	cursor: pointer;
+	font-weight: 500;
+	font-size: 0.85rem;
+	color: inherit;
 	transition: all 0.2s ease;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	white-space: nowrap;
 }
 
 .draft-card:hover {
-	transform: translateY(-2px);
-	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+	background: rgba(255, 255, 255, 0.15);
+	border-color: var(--v-theme-primary);
 }
 
 .draft-card:active {
-	transform: translateY(0);
+	transform: scale(0.98);
 }
 
-.draft-card-content {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
-.draft-customer-name {
-	font-weight: 600;
-	font-size: 0.8rem;
-	color: #1a1a1a;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.draft-amount {
-	font-weight: 700;
-	font-size: 0.85rem;
-	color: #1a1a1a;
-}
-
-.draft-date {
-	font-size: 0.7rem;
-	color: rgba(26, 26, 26, 0.7);
-}
-
-/* Responsive styles */
+/* Responsive */
 @media (max-width: 600px) {
 	.customer-selection-row {
 		flex-direction: column;
-		gap: 8px;
+		gap: 12px;
 	}
 
-	.customer-search-section,
 	.customer-group-section {
 		flex: 1;
 		width: 100%;
-		max-width: none;
 	}
 }
 </style>
@@ -289,6 +274,7 @@ import _ from "lodash";
 import UpdateCustomer from "./UpdateCustomer.vue";
 import Skeleton from "../ui/Skeleton.vue";
 import { useCustomersStore } from "../../stores/customersStore.js";
+import { clearCustomerStorage, setCustomersLastSync } from "../../../offline/index.js";
 import format from "../../format";
 
 export default {
@@ -343,6 +329,7 @@ export default {
 		// Filter customers by selected group
 		const displayCustomers = computed(() => {
 			const allCustomers = filteredCustomers.value || customers.value || [];
+			
 			if (selectedGroup.value === "all") {
 				return allCustomers;
 			}
@@ -405,8 +392,20 @@ export default {
 			}
 		};
 
-		const onGroupChange = (group) => {
+		const onGroupChange = async (group) => {
 			selectedGroup.value = group;
+			
+			// Check if customers have customer_group field
+			const allCustomers = customers.value || [];
+			if (allCustomers.length > 0 && !allCustomers[0].customer_group) {
+				console.log("Customer group field missing - clearing cache and reloading...");
+				// Clear old cache that doesn't have customer_group
+				await clearCustomerStorage();
+				setCustomersLastSync(null);
+				// Reload customers from server
+				await customersStore.get_customer_names();
+			}
+			
 			// Reset customer search when group changes
 			customersStore.searchCustomers("");
 		};
