@@ -242,12 +242,28 @@ export async function syncOfflineInvoices() {
 
 		for (const inv of invoices) {
 			try {
+				// Clean offline-draft name so backend creates a new invoice
 				const invoicePayload = {
 					...inv.invoice,
 					posting_date: inv.invoice?.posting_date || inv.offline_created_at,
 					posting_time: inv.invoice?.posting_time,
 					set_posting_time: 1,
 				};
+				
+				// Remove offline-draft name
+				if (invoicePayload.name && invoicePayload.name.startsWith("offline-draft-")) {
+					delete invoicePayload.name;
+				}
+				// Clean item names that may have offline prefixes
+				if (invoicePayload.items) {
+					invoicePayload.items = invoicePayload.items.map((item) => {
+						const cleanItem = { ...item };
+						if (cleanItem.name && typeof cleanItem.name === "string" && cleanItem.name.startsWith("offline-")) {
+							delete cleanItem.name;
+						}
+						return cleanItem;
+					});
+				}
 
 				await frappe.call({
 					method: "posawesome.posawesome.api.invoices.submit_invoice",
@@ -260,9 +276,24 @@ export async function syncOfflineInvoices() {
 			} catch (error) {
 				console.error("Failed to submit invoice, saving as draft", error);
 				try {
+					// Clean offline-draft name for draft save as well
+					const invoiceForDraft = { ...inv.invoice };
+					if (invoiceForDraft.name && invoiceForDraft.name.startsWith("offline-draft-")) {
+						delete invoiceForDraft.name;
+					}
+					if (invoiceForDraft.items) {
+						invoiceForDraft.items = invoiceForDraft.items.map((item) => {
+							const cleanItem = { ...item };
+							if (cleanItem.name && typeof cleanItem.name === "string" && cleanItem.name.startsWith("offline-")) {
+								delete cleanItem.name;
+							}
+							return cleanItem;
+						});
+					}
+
 					await frappe.call({
 						method: "posawesome.posawesome.api.invoices.update_invoice",
-						args: { data: inv.invoice },
+						args: { data: invoiceForDraft },
 					});
 					drafted += 1;
 				} catch (draftErr) {
