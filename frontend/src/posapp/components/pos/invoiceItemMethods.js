@@ -1811,6 +1811,12 @@ export default {
 					color: "error",
 				});
 			}
+			
+			// For offline mode, save draft here (not in update_invoice)
+			// This ensures drafts are only created when user explicitly saves
+			if (old_invoice && isOffline()) {
+				saveDraftInvoice(old_invoice);
+			}
 		} catch (error) {
 			console.error("Error saving and clearing invoice:", error);
 		}
@@ -2491,8 +2497,9 @@ export default {
 			});
 			this.invoice_doc = offlineDoc;
 			
-			// Save to offline cache for draft cards
-			saveDraftInvoice(offlineDoc);
+			// NOTE: Draft is NOT saved here automatically.
+			// Draft should only be saved when user explicitly clicks "Save and Clear"
+			// using the save_and_clear method, not on every update_invoice call.
 			
 			return this.invoice_doc;
 		}
