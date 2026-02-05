@@ -541,12 +541,7 @@
 							class="my-0 pa-1"
 						></v-switch>
 					</v-col>
-					<v-col
-						cols="6"
-						v-if="invoice_doc && pos_profile.posa_allow_credit_sale && !invoice_doc.is_return"
-					>
-						<v-switch v-model="is_credit_sale" :label="frappe._('Credit Sale?')"></v-switch>
-					</v-col>
+
 					<v-col cols="6" v-if="invoice_doc && invoice_doc.is_return && pos_profile.use_cashback">
 						<v-switch
 							v-model="is_cashback"
@@ -563,7 +558,7 @@
 							class="my-0 pa-1"
 						></v-switch>
 					</v-col>
-					<v-col cols="6" v-if="is_credit_sale">
+					<v-col cols="6" v-if="isAutoCreditSale && !invoice_doc.is_return">
 						<VueDatePicker
 							v-model="new_credit_due_date"
 							model-type="format"
@@ -864,7 +859,7 @@ export default {
 			redeemed_customer_credit: 0, // Customer credit to redeem
 			credit_change: 0, // Change to be given as credit
 			paid_change: 0, // Change to be given as paid
-			is_credit_sale: false, // Is this a credit sale?
+			// is_credit_sale is now a computed property (isAutoCreditSale)
 			is_write_off_change: false, // Write-off for change enabled
 			is_cashback: true, // Cashback enabled
 			is_credit_return: false, // Is this a credit return?
@@ -1073,6 +1068,24 @@ export default {
 				? `To Be Paid (${this.displayCurrency})`
 				: `Change (${this.displayCurrency})`;
 		},
+		// Auto-detect credit sale based on payment amount
+		// Credit sale = no payment entered (total_payments === 0)
+		// Partly paid = some payment but less than invoice total
+		// Fully paid = payment equals or exceeds invoice total
+		isAutoCreditSale() {
+			if (!this.invoice_doc) return false;
+			// Auto credit sale when no payments made
+			return this.total_payments === 0;
+		},
+		// Check if payment is partial (some amount paid but not full)
+		isPartlyPaid() {
+			if (!this.invoice_doc) return false;
+			const invoiceTotal = this.flt(
+				this.invoice_doc.rounded_total || this.invoice_doc.grand_total,
+				this.currency_precision,
+			);
+			return this.total_payments > 0 && this.total_payments < invoiceTotal;
+		},
 		// Display formatted total payments
 		total_payments_display() {
 			return this.formatCurrency(this.total_payments, this.displayCurrency);
@@ -1219,7 +1232,7 @@ export default {
 					baseAmount / (this.customer_info.conversion_factor || 1),
 				);
 
-				if (!this.is_credit_sale && this.invoice_doc.payments) {
+				if (!this.isAutoCreditSale && this.invoice_doc.payments) {
 					const default_payment = this.invoice_doc.payments.find((p) => p.default === 1);
 					if (default_payment) {
 						const invoice_total = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
@@ -1276,27 +1289,7 @@ export default {
 				console.log("Cleared sales_team");
 			}
 		},
-		// Watch is_credit_sale to reset cash payments
-		is_credit_sale(newVal) {
-			if (!this.invoice_doc) {
-				return;
-			}
-			if (newVal) {
-				// If credit sale is enabled, set cash payment to 0
-				this.invoice_doc.payments.forEach((payment) => {
-					if (payment.mode_of_payment.toLowerCase() === "cash") {
-						payment.amount = 0;
-					}
-				});
-			} else {
-				// If credit sale is disabled, set cash payment to invoice total
-				this.invoice_doc.payments.forEach((payment) => {
-					if (payment.mode_of_payment.toLowerCase() === "cash") {
-						payment.amount = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
-					}
-				});
-			}
-		},
+		// is_credit_sale watcher removed - now auto-detected via isAutoCreditSale computed property
 		// Watch is_credit_return to toggle cashback payments
 		is_credit_return(newVal) {
 			if (!this.invoice_doc) {
@@ -1487,54 +1480,37 @@ export default {
 				if (this.invoice_doc.is_return) {
 					this.ensureReturnPaymentsAreNegative();
 				}
-				// Validate total payments only if not credit sale and invoice total is not zero
+				// AUTO CREDIT SALE LOGIC:
+				// - If total_payments === 0 → Credit Sale (allowed if posa_allow_credit_sale is enabled)
+				// - If 0 < total_payments < invoice_total → Partly Paid (allowed if posa_allow_partial_payment is enabled)
+				// - If total_payments >= invoice_total → Fully Paid
+
+				const invoiceTotal = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
+
+				// Credit Sale validation - if no payment entered, must have credit sale permission
 				if (
-					!this.is_credit_sale &&
+					this.isAutoCreditSale &&
 					!this.invoice_doc.is_return &&
-					this.total_payments <= 0 &&
-					(this.invoice_doc.rounded_total || this.invoice_doc.grand_total) > 0
+					invoiceTotal > 0 &&
+					!this.pos_profile.posa_allow_credit_sale
 				) {
 					this.eventBus.emit("show_message", {
-						title: `Please enter payment amount`,
+						title: `Credit sale is not allowed. Please enter payment amount.`,
 						color: "error",
 					});
 					frappe.utils.play_sound("error");
 					return;
 				}
-				// Validate cash payments when credit sale is off
-				if (!this.is_credit_sale && !this.invoice_doc.is_return) {
-					let has_cash_payment = false;
-					let cash_amount = 0;
-					this.invoice_doc.payments.forEach((payment) => {
-						if (payment.mode_of_payment.toLowerCase().includes("cash")) {
-							has_cash_payment = true;
-							cash_amount = this.flt(payment.amount);
-						}
-					});
-					if (has_cash_payment && cash_amount > 0) {
-						if (
-							!this.pos_profile.posa_allow_partial_payment &&
-							cash_amount < (this.invoice_doc.rounded_total || this.invoice_doc.grand_total) &&
-							(this.invoice_doc.rounded_total || this.invoice_doc.grand_total) > 0
-						) {
-							this.eventBus.emit("show_message", {
-								title: `Cash payment cannot be less than invoice total when partial payment is not allowed`,
-								color: "error",
-							});
-							frappe.utils.play_sound("error");
-							return;
-						}
-					}
-				}
-				// Validate partial payments only if not credit sale and invoice total is not zero
+
+				// Partly Paid validation - if partial payment, must have partial payment permission
 				if (
-					!this.is_credit_sale &&
-					!this.pos_profile.posa_allow_partial_payment &&
-					this.total_payments < (this.invoice_doc.rounded_total || this.invoice_doc.grand_total) &&
-					(this.invoice_doc.rounded_total || this.invoice_doc.grand_total) > 0
+					this.isPartlyPaid &&
+					!this.invoice_doc.is_return &&
+					invoiceTotal > 0 &&
+					!this.pos_profile.posa_allow_partial_payment
 				) {
 					this.eventBus.emit("show_message", {
-						title: `The amount paid is not complete`,
+						title: `Partial payment is not allowed. Please pay the full amount.`,
 						color: "error",
 					});
 					frappe.utils.play_sound("error");
@@ -1663,10 +1639,15 @@ export default {
 				redeemed_customer_credit: this.redeemed_customer_credit,
 				customer_credit_dict: this.customer_credit_dict,
 				is_cashback: this.is_cashback,
+				is_credit_sale: this.isAutoCreditSale, // Auto-detected based on payment amount
+				is_partly_paid: this.isPartlyPaid, // Partial payment flag
 			};
 
 			if (isOffline()) {
 				try {
+					// Set is_credit_sale on invoice_doc for offline print template
+					this.invoice_doc.is_credit_sale = this.isAutoCreditSale;
+					this.invoice_doc.is_partly_paid = this.isPartlyPaid;
 					saveOfflineInvoice({ data: data, invoice: this.invoice_doc });
 					this.eventBus.emit("pending_invoices_changed", getPendingOfflineInvoiceCount());
 					this.eventBus.emit("show_message", {
@@ -2774,7 +2755,7 @@ export default {
 				const hasReturnPayments = this.invoice_doc.payments.some(
 					(payment) => Math.abs(this.flt(payment.amount || 0, this.currency_precision)) > 0,
 				);
-				this.is_credit_sale = false;
+				// is_credit_sale is now auto-detected - no need to reset manually
 				this.is_write_off_change = false;
 				if (invoice_doc.is_return) {
 					this.is_return = true;
