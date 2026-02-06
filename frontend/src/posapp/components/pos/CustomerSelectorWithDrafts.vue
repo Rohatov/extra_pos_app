@@ -2,6 +2,22 @@
 	<div class="customer-drafts-container">
 		<!-- Row 1: Customer Search and Customer Group side by side -->
 		<div class="customer-selection-row">
+			<!-- Guest Button -->
+			<div class="guest-button-section" style="margin-right: 8px;">
+				<v-btn
+					color="primary"
+					density="comfortable"
+					variant="tonal"
+					class="guest-btn"
+					@click="setGuestCustomer"
+					:disabled="effectiveReadonly || loadingCustomers"
+					prepend-icon="mdi-account"
+					style="height: 44px; min-width: 110px;"
+				>
+					{{ __('Guest') }}
+				</v-btn>
+			</div>
+
 			<!-- Customer Search -->
 			<div class="customer-search-section">
 				<Skeleton v-if="loadingCustomers" height="44" class="w-100" />
@@ -130,6 +146,19 @@
 	align-items: flex-start;
 	width: 100%;
 	overflow: visible;
+}
+
+.guest-button-section {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+}
+
+.guest-btn {
+	height: 44px;
+	min-width: 110px;
+	font-weight: 600;
+	text-transform: none;
 }
 
 .customer-search-section {
@@ -501,6 +530,68 @@ export default {
 			eventBus?.emit("open_update_customer", customerInfo.value || {});
 		};
 
+		const setGuestCustomer = async () => {
+			const guestCustomerName = "Guest Customer";
+			
+			try {
+				// First check if guest customer exists in the loaded customers list
+				const allCustomers = customers.value || [];
+				let guestCustomer = allCustomers.find(
+					(c) => c.name === guestCustomerName || c.customer_name === guestCustomerName
+				);
+				
+				// If not in list, fetch from backend
+				if (!guestCustomer) {
+					const response = await frappe.call({
+						method: "frappe.client.get",
+						args: {
+							doctype: "Customer",
+							name: guestCustomerName,
+						},
+					});
+					
+					if (response && response.message) {
+						guestCustomer = response.message;
+						// Add to local customers list
+						await customersStore.addOrUpdateCustomer(guestCustomer);
+					}
+				}
+				
+				if (guestCustomer) {
+					// Set the guest customer using the name field
+					const customerNameToSet = guestCustomer.name || guestCustomerName;
+					internalCustomer.value = customerNameToSet;
+					customersStore.setSelectedCustomer(customerNameToSet);
+					
+					// Emit set_customer event for other components
+					eventBus?.emit("set_customer", customerNameToSet);
+					
+					// Close menu if open
+					if (isMenuOpen.value) {
+						closeCustomerMenu();
+					}
+					
+					// Show confirmation message
+					eventBus?.emit("show_message", {
+						text: __("Guest Customer selected"),
+						color: "success",
+					});
+				} else {
+					// Guest customer not found
+					eventBus?.emit("show_message", {
+						text: __("Guest Customer not found. Please create it first."),
+						color: "error",
+					});
+				}
+			} catch (error) {
+				console.error("Error setting guest customer:", error);
+				eventBus?.emit("show_message", {
+					text: __("Error selecting Guest Customer"),
+					color: "error",
+				});
+			}
+		};
+
 		const loadDraft = (draft) => {
 			emit("load-draft", draft);
 		};
@@ -629,6 +720,7 @@ export default {
 			handleEnter,
 			new_customer,
 			edit_customer,
+			setGuestCustomer,
 			loadDraft,
 			formatDate,
 			selectFirstCustomer,
