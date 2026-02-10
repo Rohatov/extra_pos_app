@@ -154,6 +154,9 @@ jobs:
           # Install dependencies
           echo "📦 Installing Python dependencies..."
           bench setup requirements || echo "⚠️ Warning: requirements installation had issues"
+          
+          # Fix: Python 3.12 da pkg_resources yo'q - setuptools o'rnatish
+          \${BENCH_PATH}/env/bin/pip install --quiet --upgrade setuptools
         
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
