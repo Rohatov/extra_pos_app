@@ -157,8 +157,9 @@ jobs:
           
           # Fix: Python 3.12 da pkg_resources yo'q - setuptools o'rnatish
           echo "🔧 Installing setuptools for pkg_resources..."
-          uv pip install setuptools --python \${BENCH_PATH}/env/bin/python
-          \${BENCH_PATH}/env/bin/python -c "import pkg_resources; print('✅ pkg_resources available')"
+          cd /home/frappe/frappe-bench
+          ./env/bin/pip install setuptools
+          ./env/bin/python -c "import pkg_resources; print('✅ pkg_resources available')"
         
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
