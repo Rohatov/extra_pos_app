@@ -155,11 +155,10 @@ jobs:
           echo "📦 Installing Python dependencies..."
           bench setup requirements || echo "⚠️ Warning: requirements installation had issues"
           
-          # Fix: Python 3.12 da pkg_resources yo'q - setuptools o'rnatish
-          echo "🔧 Installing setuptools for pkg_resources..."
+          # Fix: Python 3.12 da pkg_resources yo'q - dropbox olib tashlash
+          echo "🔧 Removing dropbox (not needed, causes pkg_resources error)..."
           cd /home/frappe/frappe-bench
-          ./env/bin/pip install setuptools
-          ./env/bin/python -c "import pkg_resources; print('✅ pkg_resources available')"
+          ./env/bin/pip uninstall dropbox -y 2>/dev/null || true
         
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
