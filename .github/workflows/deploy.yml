@@ -125,21 +125,12 @@ jobs:
           APP_NAME=$(basename ${{ github.repository }})
           echo "📦 App name: ${APP_NAME}"
           
-          # ============================================
-          # CRITICAL FIX: Pass SITE_NAME as variable
-          # Problem: Single-quote heredoc 'FRAPPE_EOF' 
-          # prevents GitHub Actions variable interpolation
-          # Solution: Pass as env var to SSH session
-          # ============================================
-          
           ssh root@${{ secrets.SERVER_IP }} << ENDSSH
             # Extract app name from repository for this SSH session
             APP_NAME=\$(basename "${{ github.repository }}")
             
             # Pass environment variables to frappe user
-            # Using double-quote heredoc to expand variables
             su - frappe << 'FRAPPE_EOF'
-          # Set environment variables inside frappe shell
           export SITE_NAME="${{ secrets.SITE_NAME }}"
           export BENCH_PATH="${{ env.BENCH_PATH }}"
           export APP_NAME="\$(basename "${{ github.repository }}")"
@@ -151,26 +142,18 @@ jobs:
           echo "🔧 Enabling maintenance mode..."
           bench --site \${SITE_NAME} set-maintenance-mode on || true
           
-          # Pull latest code - Auto-detect remote name
+          # Pull latest code
           echo "📥 Pulling latest code for \${APP_NAME}..."
           cd apps/\${APP_NAME}
-          
-          # Detect remote name (origin or upstream)
           REMOTE_NAME=\$(git remote | head -1)
-          echo "🔗 Using remote: \${REMOTE_NAME}"
-          
-          # Pull latest changes
           git fetch \${REMOTE_NAME}
           git reset --hard \${REMOTE_NAME}/${{ github.ref_name }}
-          
-          echo "✅ Code updated to latest commit:"
-          git log -1 --oneline
           
           cd \${BENCH_PATH}
           
           # Install dependencies
           echo "📦 Installing Python dependencies..."
-          bench setup requirements || true
+          bench setup requirements || echo "⚠️ Warning: requirements installation had issues"
           
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
