@@ -297,6 +297,7 @@
 			:total_qty="total_qty"
 			:additional_discount="additional_discount"
 			:additional_discount_percentage="additional_discount_percentage"
+			:grossTotal="Total"
 			:total_items_discount_amount="total_items_discount_amount"
 			:subtotal="subtotal"
 			:displayCurrency="displayCurrency"
