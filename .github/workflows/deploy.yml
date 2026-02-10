@@ -154,15 +154,6 @@ jobs:
           # Install dependencies
           echo "📦 Installing Python dependencies..."
           bench setup requirements || echo "⚠️ Warning: requirements installation had issues"
-          
-          # Fix: uv setuptools ni buzib o'rnatadi - ildizdan tozalab qayta o'rnatish
-          echo "🔧 Fixing pkg_resources for Python 3.12..."
-          cd /home/frappe/frappe-bench
-          rm -rf ./env/lib/python3.12/site-packages/setuptools*
-          rm -rf ./env/lib/python3.12/site-packages/pkg_resources*
-          rm -rf ./env/lib/python3.12/site-packages/_distutils_hack*
-          ./env/bin/pip install --no-cache-dir setuptools
-          ./env/bin/python -c "import pkg_resources; print('pkg_resources OK')"
         
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
