@@ -154,7 +154,7 @@ jobs:
           # Install dependencies
           echo "📦 Installing Python dependencies..."
           bench setup requirements || echo "⚠️ Warning: requirements installation had issues"
-          
+          ./env/bin/pip install dropbox==12.0.2
           # ============================================
           # CRITICAL: Run migrations to apply fixtures
           # ============================================
