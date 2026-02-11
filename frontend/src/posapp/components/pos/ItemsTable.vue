@@ -770,16 +770,16 @@ export default {
 			};
 		},
 
-		// Virtual scrolling configuration for optimal performance
+		// Virtual scrolling configuration for optimal performance - compact heights
 		virtualScrollConfig() {
 			const itemCount = this.items?.length || 0;
 			const containerHeight = this.containerHeight;
 
-			// Dynamic configuration based on dataset size and container
+			// Dynamic configuration based on dataset size and container - reduced heights for compact UI
 			return {
 				itemHeight:
-					this.tableDensity === "compact" ? 48 : this.tableDensity === "comfortable" ? 72 : 60,
-				itemsPerPage: Math.max(20, Math.ceil(containerHeight / 60) + 5),
+					this.tableDensity === "compact" ? 32 : this.tableDensity === "comfortable" ? 40 : 36,
+				itemsPerPage: Math.max(20, Math.ceil(containerHeight / 36) + 5),
 				bufferSize: itemCount > 1000 ? 20 : itemCount > 500 ? 15 : 10,
 			};
 		},
@@ -1392,13 +1392,13 @@ export default {
 	border: none;
 }
 
-/* Enhanced table header styling with global theme support */
+/* Enhanced table header styling with global theme support - compact */
 .pos-table :deep(th) {
 	font-weight: 600;
 	font-size: 0.8rem;
 	text-transform: uppercase;
 	letter-spacing: 0.3px;
-	padding: 12px;
+	padding: 6px 4px;
 	border-bottom: 1px solid var(--pos-border);
 	background-color: var(--pos-table-header-bg);
 	color: var(--pos-text-primary);
@@ -1413,7 +1413,7 @@ export default {
 	text-align: center;
 	vertical-align: middle !important;
 	line-height: 1.2 !important;
-	height: 40px;
+	height: 32px;
 	/* Enhanced transitions and stability */
 	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	background-clip: padding-box;
@@ -1482,11 +1482,11 @@ export default {
 	background-color: var(--pos-table-row-hover);
 }
 
-/* Table cell styling */
+/* Table cell styling - compact */
 .pos-table :deep(td) {
-	padding: 16px 12px;
+	padding: 4px 6px;
 	vertical-align: middle;
-	height: 60px;
+	height: 36px;
 	text-align: center;
 	color: var(--pos-text-primary);
 	position: relative;
@@ -1964,40 +1964,40 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 	box-sizing: border-box;
 }
 
-/* Breakpoint-specific container classes */
+/* Breakpoint-specific container classes - compact heights */
 .responsive-table-container.breakpoint-xs {
-	--table-padding: 8px;
+	--table-padding: 4px;
 	--header-font-size: 0.65rem;
-	--cell-padding: 8px 4px;
-	--cell-height: 48px;
+	--cell-padding: 2px 2px;
+	--cell-height: 32px;
 }
 
 .responsive-table-container.breakpoint-sm {
-	--table-padding: 12px;
+	--table-padding: 6px;
 	--header-font-size: 0.7rem;
-	--cell-padding: 12px 6px;
-	--cell-height: 52px;
+	--cell-padding: 3px 4px;
+	--cell-height: 34px;
 }
 
 .responsive-table-container.breakpoint-md {
-	--table-padding: 16px;
+	--table-padding: 8px;
 	--header-font-size: 0.75rem;
-	--cell-padding: 14px 8px;
-	--cell-height: 56px;
+	--cell-padding: 4px 6px;
+	--cell-height: 36px;
 }
 
 .responsive-table-container.breakpoint-lg {
-	--table-padding: 16px;
+	--table-padding: 8px;
 	--header-font-size: 0.8rem;
-	--cell-padding: 16px 12px;
-	--cell-height: 60px;
+	--cell-padding: 4px 6px;
+	--cell-height: 36px;
 }
 
 .responsive-table-container.breakpoint-xl {
-	--table-padding: 20px;
+	--table-padding: 10px;
 	--header-font-size: 0.85rem;
-	--cell-padding: 18px 12px;
-	--cell-height: 64px;
+	--cell-padding: 4px 8px;
+	--cell-height: 38px;
 }
 
 /* Dynamic table styling based on container size */
@@ -2077,17 +2077,17 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 }
 
 .responsive-table-container.compact-view .qty-control-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
+	width: 18px !important;
+	height: 18px !important;
+	min-width: 18px !important;
 }
 
 .responsive-table-container.compact-view .pos-table__qty-display {
-	min-width: 30px;
-	max-width: 60px;
-	height: 24px;
+	min-width: 28px;
+	max-width: 55px;
+	height: 18px;
 	font-size: 0.7rem;
-	padding: 2px 2px;
+	padding: 1px 2px;
 	letter-spacing: -0.03em;
 }
 
@@ -2239,19 +2239,19 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 
 	.pos-table :deep(th) {
 		font-size: 0.65rem;
-		padding: 12px 6px;
+		padding: 4px 4px;
 		letter-spacing: 0.5px;
 	}
 
 	.pos-table :deep(td) {
-		padding: 16px 8px;
-		height: 56px;
+		padding: 4px 4px;
+		height: 34px;
 		font-size: 0.85rem;
 	}
 
 	.expanded-content {
-		padding: 20px 16px;
-		border-radius: 0 0 12px 12px;
+		padding: 12px 10px;
+		border-radius: 0 0 8px 8px;
 	}
 }
 
@@ -2306,15 +2306,15 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 
 	.pos-table :deep(th) {
 		font-size: 0.6rem;
-		padding: 8px 4px;
+		padding: 3px 2px;
 		max-width: 80px;
 		min-width: 50px;
 		letter-spacing: 0.3px;
 	}
 
 	.pos-table :deep(td) {
-		padding: 12px 4px;
-		height: 48px;
+		padding: 3px 2px;
+		height: 32px;
 		font-size: 0.8rem;
 	}
 
@@ -2335,18 +2335,18 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 	}
 
 	.pos-table__qty-counter {
-		min-width: 110px;
-		width: 110px;
+		min-width: 90px;
+		width: 90px;
 		height: auto;
-		gap: 4px;
-		padding: 2px;
+		gap: 2px;
+		padding: 1px;
 	}
 
 	.qty-control-btn {
-		width: 24px !important;
-		height: 24px !important;
-		min-width: 24px !important;
-		border-radius: 6px !important;
+		width: 18px !important;
+		height: 18px !important;
+		min-width: 18px !important;
+		border-radius: 4px !important;
 	}
 
 	.pos-table__qty-display {
@@ -2797,7 +2797,7 @@ body[dir="rtl"] .amount-value.right-aligned {
 
 /* Hide any empty rows with zero or minimal height */
 .pos-table :deep(tr) {
-	min-height: var(--cell-height, 60px);
+	min-height: var(--cell-height, 36px);
 }
 
 .pos-table :deep(tr:empty),
@@ -3048,16 +3048,16 @@ body[dir="rtl"] .amount-value.right-aligned {
 	background-color: var(--surface-secondary);
 }
 
-/* QTY Counter Styling */
+/* QTY Counter Styling - Compact */
 .qty-control-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
-	border-radius: 6px !important;
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	border-radius: 4px !important;
 	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 	box-shadow:
-		0 2px 8px var(--pos-shadow-light),
-		0 1px 3px var(--pos-shadow-light) !important;
+		0 1px 4px var(--pos-shadow-light),
+		0 1px 2px var(--pos-shadow-light) !important;
 	font-weight: 600 !important;
 	backdrop-filter: blur(10px) !important;
 	position: relative !important;
@@ -3209,11 +3209,11 @@ body[dir="rtl"] .number-field-rtl {
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 3px var(--pos-shadow-light);
+	box-shadow: 0 1px 2px var(--pos-shadow-light);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 24px;
+	height: 20px;
 	/* Handle overflow gracefully */
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -3307,19 +3307,19 @@ body[dir="rtl"] .number-field-rtl {
 	transform: translateY(-2px) scale(1.05) !important;
 }
 
-/* Delete action button styling */
+/* Delete action button styling - compact */
 .delete-action-btn {
-	min-width: 44px !important;
-	height: 44px !important;
-	border-radius: 12px !important;
+	min-width: 28px !important;
+	height: 28px !important;
+	border-radius: 6px !important;
 	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 	box-shadow:
-		0 4px 12px var(--pos-shadow),
-		0 2px 4px var(--pos-shadow-light) !important;
+		0 2px 6px var(--pos-shadow),
+		0 1px 2px var(--pos-shadow-light) !important;
 	font-weight: 600 !important;
 	background: var(--pos-button-error-bg) !important;
 	color: var(--pos-button-error-text) !important;
-	border: 2px solid var(--pos-button-error-border) !important;
+	border: 1px solid var(--pos-button-error-border) !important;
 	position: relative !important;
 	overflow: hidden !important;
 }
@@ -3375,15 +3375,15 @@ body[dir="rtl"] .number-field-rtl {
 	margin: 0;
 }
 .pos-table__qty-input :deep(.v-input__control) {
-	height: 24px;
+	height: 20px;
 }
 .pos-table__qty-input :deep(.v-field__field) {
-	height: 24px;
-	padding: 0 4px;
+	height: 20px;
+	padding: 0 2px;
 }
 .pos-table__qty-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 24px;
+	min-height: 20px;
 	font-size: 0.75rem;
 }
 .pos-table__editor-box {
@@ -3419,17 +3419,17 @@ body[dir="rtl"] .number-field-rtl {
 	text-align: center;
 	font-weight: 600;
 	padding: 0 2px;
-	border-radius: 4px;
+	border-radius: 3px;
 	background: var(--pos-primary-container);
 	border: 1px solid var(--pos-primary-variant);
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 3px var(--pos-shadow-light);
+	box-shadow: 0 1px 2px var(--pos-shadow-light);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 24px;
+	height: 20px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -3437,24 +3437,24 @@ body[dir="rtl"] .number-field-rtl {
 }
 
 .pos-table__editor-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
-	border-radius: 6px !important;
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	border-radius: 4px !important;
 }
 .pos-table__editor-input {
 	max-width: 80px;
 }
 .pos-table__editor-input :deep(.v-input__control) {
-	height: 24px;
+	height: 20px;
 }
 .pos-table__editor-input :deep(.v-field__field) {
-	height: 24px;
-	padding: 0 4px;
+	height: 20px;
+	padding: 0 2px;
 }
 .pos-table__editor-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 24px;
+	min-height: 20px;
 	font-size: 0.75rem;
 }
 .pos-table__editor-input :deep(input) {
@@ -3497,7 +3497,3 @@ body[dir="rtl"] .number-field-rtl {
 	display: none;
 }
 </style>
-
-
-
-

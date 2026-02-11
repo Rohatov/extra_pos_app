@@ -541,16 +541,16 @@ export default {
    We might need to rely on global styles or duplicate some here.
 */
 
-/* QTY Counter Styling */
+/* QTY Counter Styling - Compact */
 .qty-control-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
-	border-radius: 6px !important;
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	border-radius: 4px !important;
 	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 	box-shadow:
-		0 2px 8px var(--pos-shadow-light),
-		0 1px 3px var(--pos-shadow-light) !important;
+		0 1px 4px var(--pos-shadow-light),
+		0 1px 2px var(--pos-shadow-light) !important;
 	font-weight: 600 !important;
 	backdrop-filter: blur(10px) !important;
 	position: relative !important;
@@ -637,7 +637,7 @@ export default {
 	text-align: center;
 	font-weight: 600;
 	padding: 0 2px;
-	border-radius: 4px;
+	border-radius: 3px;
 	background: var(--pos-primary-container);
 	border: 1px solid var(--pos-primary-variant);
 	font-family:
@@ -651,11 +651,11 @@ export default {
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 3px var(--pos-shadow-light);
+	box-shadow: 0 1px 2px var(--pos-shadow-light);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 24px;
+	height: 20px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -712,19 +712,19 @@ export default {
 	transform: translateY(-2px) scale(1.05) !important;
 }
 
-/* Delete action button styling */
+/* Delete action button styling - compact height */
 .delete-action-btn {
-	min-width: 44px !important;
-	height: 44px !important;
-	border-radius: 12px !important;
+	min-width: 28px !important;
+	height: 28px !important;
+	border-radius: 6px !important;
 	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 	box-shadow:
-		0 4px 12px var(--pos-shadow),
-		0 2px 4px var(--pos-shadow-light) !important;
+		0 2px 6px var(--pos-shadow),
+		0 1px 2px var(--pos-shadow-light) !important;
 	font-weight: 600 !important;
 	background: var(--pos-button-error-bg) !important;
 	color: var(--pos-button-error-text) !important;
-	border: 2px solid var(--pos-button-error-border) !important;
+	border: 1px solid var(--pos-button-error-border) !important;
 	position: relative !important;
 	overflow: hidden !important;
 }
@@ -780,15 +780,15 @@ export default {
 	margin: 0;
 }
 .pos-table__qty-input :deep(.v-input__control) {
-	height: 24px;
+	height: 20px;
 }
 .pos-table__qty-input :deep(.v-field__field) {
-	height: 24px;
-	padding: 0 4px;
+	height: 20px;
+	padding: 0 2px;
 }
 .pos-table__qty-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 24px;
+	min-height: 20px;
 	font-size: 0.75rem;
 }
 .pos-table__editor-box {
@@ -824,17 +824,17 @@ export default {
 	text-align: center;
 	font-weight: 600;
 	padding: 0 2px;
-	border-radius: 4px;
+	border-radius: 3px;
 	background: var(--pos-primary-container);
 	border: 1px solid var(--pos-primary-variant);
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 3px var(--pos-shadow-light);
+	box-shadow: 0 1px 2px var(--pos-shadow-light);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 24px;
+	height: 20px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -842,24 +842,24 @@ export default {
 }
 
 .pos-table__editor-btn {
-	width: 24px !important;
-	height: 24px !important;
-	min-width: 24px !important;
-	border-radius: 6px !important;
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	border-radius: 4px !important;
 }
 .pos-table__editor-input {
 	max-width: 80px;
 }
 .pos-table__editor-input :deep(.v-input__control) {
-	height: 24px;
+	height: 20px;
 }
 .pos-table__editor-input :deep(.v-field__field) {
-	height: 24px;
-	padding: 0 4px;
+	height: 20px;
+	padding: 0 2px;
 }
 .pos-table__editor-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 24px;
+	min-height: 20px;
 	font-size: 0.75rem;
 }
 .pos-table__editor-input :deep(input) {
@@ -944,11 +944,11 @@ export default {
 	font-weight: 600;
 }
 
-/* Add minimal padding for table cells as per ItemsTable.vue styles */
+/* Compact padding for table cells - maximized vertical density */
 td {
-	padding: 16px 12px;
+	padding: 4px 6px;
 	vertical-align: middle;
-	height: 60px;
+	height: 36px;
 	text-align: center;
 	color: var(--pos-text-primary);
 	position: relative;
