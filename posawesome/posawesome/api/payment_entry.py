@@ -576,6 +576,7 @@ def get_customer_sverka(customer, company, currency=None):
         invoice_name = None
         payment_name = None
         mode_of_payment = None
+        sales_order_name = None
         description = ""
         trans_type = "other"
         payment_source = ""  # Track where payment came from
@@ -621,7 +622,18 @@ def get_customer_sverka(customer, company, currency=None):
             )
             if linked_invs:
                 invoice_name = ", ".join(linked_invs)
+
+            # Get linked Sales Order from payment (advance/avans)
+            linked_orders = frappe.get_all(
+                "Payment Entry Reference",
+                filters={"parent": voucher_no, "reference_doctype": "Sales Order"},
+                pluck="reference_name"
+            )
+            sales_order_name = ", ".join(linked_orders) if linked_orders else None
+
             description = _("To'lov - ") + (mode_of_payment or "")
+            if sales_order_name and not linked_invs:
+                description = _("Buyurtmaga to'lov - ") + (mode_of_payment or "")
 
         elif voucher_type == "Journal Entry":
             payment_name = voucher_no
@@ -653,6 +665,7 @@ def get_customer_sverka(customer, company, currency=None):
             "voucher_no": voucher_no,
             "invoice_name": invoice_name,
             "payment_name": payment_name,
+            "sales_order_name": sales_order_name,
             "debit": debit_amt,   # DEBIT = Qarz oshishi (bizDAN qarz)
             "credit": credit_amt, # KREDIT = Qarz kamayishi (bizGA kirim)
             "mode_of_payment": mode_of_payment,
