@@ -1519,15 +1519,15 @@ export default {
 
 /* Main expanded content container */
 .expanded-content {
-	padding: 24px;
+	padding: 16px;
 	width: 100% !important;
 	max-width: 100% !important;
 	box-sizing: border-box;
 	background: var(--pos-card-bg);
 	border-radius: 0 0 8px 8px;
 	border: 1px solid var(--pos-border);
-	border-top: none;
-	animation: expandIn 0.3s ease forwards;
+	border-top: 2px solid var(--pos-primary);
+	animation: expandIn 0.25s ease forwards;
 
 	/* Enable container queries */
 	container-type: inline-size;
@@ -1673,61 +1673,61 @@ export default {
 	width: 100%;
 	display: flex;
 	flex-direction: column;
-	gap: 20px;
+	gap: 12px;
 }
 
 /* Form sections - optimized for vertical stacking */
 .form-section {
 	width: 100%;
-	padding: 24px;
+	padding: 14px 16px;
 	box-sizing: border-box;
 
 	background: var(--pos-card-bg);
-	border-radius: 12px;
+	border-radius: 8px;
 	border: 1px solid var(--pos-border);
-	box-shadow: 0 2px 8px var(--pos-shadow);
+	box-shadow: 0 1px 4px var(--pos-shadow);
 
 	/* Smooth transitions */
-	transition: all 0.3s ease;
+	transition: box-shadow 0.2s ease;
 }
 
 .form-section:hover {
-	box-shadow: 0 4px 16px var(--pos-shadow-dark);
-	transform: translateY(-2px);
+	box-shadow: 0 2px 8px var(--pos-shadow-dark);
 }
 
 /* Section headers - clean and modern */
 .section-header {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	margin-bottom: 20px;
-	padding-bottom: 16px;
-	border-bottom: 2px solid var(--pos-primary);
+	gap: 8px;
+	margin-bottom: 12px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--pos-border);
 	position: relative;
 }
 
 .section-header::after {
 	content: "";
 	position: absolute;
-	bottom: -2px;
+	bottom: -1px;
 	left: 0;
-	width: 60px;
+	width: 40px;
 	height: 2px;
-	background: linear-gradient(90deg, var(--pos-primary), var(--pos-primary-container));
+	background: var(--pos-primary);
 	border-radius: 1px;
 }
 
 .section-icon {
 	color: var(--pos-primary);
 	background: var(--pos-primary-container);
-	padding: 8px;
-	border-radius: 10px;
+	padding: 6px;
+	border-radius: 8px;
+	font-size: 16px !important;
 }
 
 .section-title {
 	font-weight: 600;
-	font-size: 0.9rem;
+	font-size: 0.8rem;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	color: var(--pos-text-primary);
@@ -1737,14 +1737,18 @@ export default {
 .form-row {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 16px;
-	margin-bottom: 16px;
+	gap: 10px;
+	margin-bottom: 10px;
 	width: 100%;
+}
+
+.form-row:last-child {
+	margin-bottom: 0;
 }
 
 .form-field {
 	flex: 1;
-	min-width: 250px;
+	min-width: 140px;
 	max-width: 100%;
 	box-sizing: border-box;
 }
@@ -1761,23 +1765,23 @@ export default {
    ================================================================= */
 
 /* Small containers - mobile optimization */
-@container expanded-content (max-width: 600px) {
+@container expanded-content (max-width: 400px) {
 	.expanded-content {
-		padding: 16px;
+		padding: 10px;
 	}
 
 	.item-details-form {
-		gap: 16px;
+		gap: 8px;
 	}
 
 	.form-section {
-		padding: 20px 16px;
-		border-radius: 8px;
+		padding: 10px 12px;
+		border-radius: 6px;
 	}
 
 	.form-row {
 		flex-direction: column;
-		gap: 12px;
+		gap: 8px;
 	}
 
 	.form-field {
@@ -1785,23 +1789,34 @@ export default {
 	}
 
 	.section-header {
-		margin-bottom: 16px;
-		padding-bottom: 12px;
+		margin-bottom: 10px;
+		padding-bottom: 6px;
 	}
 
 	.section-title {
-		font-size: 0.85rem;
+		font-size: 0.75rem;
 	}
 }
 
-/* Medium containers - tablet optimization */
-@container expanded-content (max-width: 900px) {
+/* Medium containers */
+@container expanded-content (max-width: 600px) {
+	.expanded-content {
+		padding: 12px;
+	}
+
 	.form-field {
-		min-width: min(200px, 48%);
+		min-width: 120px;
 	}
 
 	.form-section {
-		padding: 20px;
+		padding: 12px 14px;
+	}
+}
+
+/* Larger containers */
+@container expanded-content (max-width: 900px) {
+	.form-field {
+		min-width: min(140px, 45%);
 	}
 }
 

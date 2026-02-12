@@ -554,6 +554,37 @@ class ItemDetailAggregator:
         for row in price_rows:
             price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
 
+        # Fallback: if the selected price list differs from the POS profile default,
+        # fetch prices from the default price list for items that have no price in the
+        # selected one so they don't show rate = 0.
+        default_price_list = self.pos_profile.get("selling_price_list")
+        if default_price_list and self.price_list and self.price_list != default_price_list:
+            missing_codes = tuple(sorted(set(item_codes_tuple) - set(price_map.keys())))
+            if missing_codes:
+                default_currency = (
+                    frappe.db.get_value("Price List", default_price_list, "currency")
+                    or self.pos_profile.get("currency")
+                )
+                if use_cache:
+                    fallback_rows = get_item_prices(
+                        default_price_list,
+                        default_currency,
+                        missing_codes,
+                        self.customer,
+                        today=self.today,
+                        ttl=self.cache_ttl,
+                    )
+                else:
+                    fallback_rows = _fetch_item_prices(
+                        default_price_list,
+                        default_currency,
+                        missing_codes,
+                        self.customer or "",
+                        self.today,
+                    )
+                for row in fallback_rows:
+                    price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
+
         stock_map = {row.item_code: row.actual_qty for row in stock_rows}
         meta_map = {row.name: row for row in meta_rows}
 

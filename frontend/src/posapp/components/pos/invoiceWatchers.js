@@ -113,19 +113,12 @@ export default {
 		// Clear cached price list items to avoid mixing rates
 		clearPriceListCache();
 
-		const effectivePriceList =
-			typeof this.get_effective_price_list === "function"
-				? this.get_effective_price_list()
-				: this.pos_profile?.selling_price_list;
+		// Respect the user's manual selection — do NOT override with get_effective_price_list()
+		const applied = newVal || this.pos_profile?.selling_price_list;
 
-		if (newVal !== effectivePriceList) {
-			this.selected_price_list = effectivePriceList;
-		}
-
-		const price_list =
-			effectivePriceList === this.pos_profile.selling_price_list ? null : effectivePriceList;
+		// Send null if same as profile default (ItemsSelector will use its own fallback)
+		const price_list = applied === this.pos_profile.selling_price_list ? null : applied;
 		this.eventBus.emit("update_customer_price_list", price_list);
-		const applied = effectivePriceList || this.pos_profile.selling_price_list;
 		this.apply_cached_price_list(applied);
 
 		// If multi-currency is enabled, sync currency with the price list currency

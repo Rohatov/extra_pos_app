@@ -126,6 +126,18 @@
 							clearable
 							autocomplete="off"
 						></v-text-field>
+						<v-select
+							v-if="price_lists.length > 1"
+							density="comfortable"
+							variant="outlined"
+							color="primary"
+							:items="price_lists"
+							v-model="selected_price_list"
+							hide-details
+							prepend-inner-icon="mdi-tag-multiple"
+							class="price-list-select pos-themed-input"
+							:label="__('Price List')"
+						></v-select>
 						<v-btn
 							density="compact"
 							variant="text"
@@ -548,6 +560,13 @@ export default {
 				this.$nextTick(() => {
 					this._invoiceTypeFromNavbar = false;
 				});
+			}
+		},
+
+		// Handle price list change from Items Selector dropdown
+		handlePriceListFromSelector(newPriceList) {
+			if (newPriceList && this.selected_price_list !== newPriceList) {
+				this.selected_price_list = newPriceList;
 			}
 		},
 
@@ -1046,20 +1065,15 @@ export default {
 		},
 
 		async fetch_price_lists() {
-			if (this.pos_profile.posa_enable_price_list_dropdown) {
-				try {
-					const r = await frappe.call({
-						method: "posawesome.posawesome.api.utilities.get_selling_price_lists",
-					});
-					if (r && r.message) {
-						this.price_lists = r.message.map((pl) => pl.name);
-					}
-				} catch (error) {
-					console.error("Failed fetching price lists", error);
-					this.price_lists = [this.pos_profile.selling_price_list];
+			try {
+				const r = await frappe.call({
+					method: "posawesome.posawesome.api.utilities.get_selling_price_lists",
+				});
+				if (r && r.message) {
+					this.price_lists = r.message.map((pl) => pl.name);
 				}
-			} else {
-				// Fallback to the price list defined in the POS Profile
+			} catch (error) {
+				console.error("Failed fetching price lists", error);
 				this.price_lists = [this.pos_profile.selling_price_list];
 			}
 
@@ -1608,6 +1622,7 @@ export default {
 			calc_uom: this.calc_uom,
 			show_payment: this.handleShowPayment,
 			update_invoice_type: this.handleUpdateInvoiceType,
+			update_selected_price_list: this.handlePriceListFromSelector,
 		};
 
 		Object.entries(this._busHandlers).forEach(([eventName, handler]) => {
@@ -1829,6 +1844,19 @@ export default {
 	flex: 1 1 280px;
 	margin-right: auto;
 	border-radius: 8px;
+}
+
+.price-list-select {
+	flex: 0 1 200px;
+	min-width: 140px;
+	max-width: 220px;
+	border-radius: 8px;
+}
+
+.price-list-select :deep(.v-field) {
+	border-radius: 8px !important;
+	background: var(--pos-input-bg, rgba(255, 255, 255, 0.05)) !important;
+	border: 1px solid var(--pos-border, rgba(255, 255, 255, 0.2)) !important;
 }
 
 .item-search-field :deep(.v-field) {

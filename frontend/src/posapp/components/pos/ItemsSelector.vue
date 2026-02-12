@@ -804,6 +804,8 @@ export default {
 		lastInvoiceRates: {},
 		lastInvoiceRateScheduler: null,
 		lastInvoiceRateLoading: false,
+		available_price_lists: [],
+		selected_price_list_local: "",
 	}),
 
 	watch: {
@@ -1787,6 +1789,31 @@ export default {
 
 			console.log("[ItemsSelector] forceReloadItems finished");
 		},
+		async fetchAvailablePriceLists() {
+			try {
+				const r = await frappe.call({
+					method: "posawesome.posawesome.api.utilities.get_selling_price_lists",
+				});
+				if (r && r.message) {
+					this.available_price_lists = r.message.map((pl) => pl.name);
+				}
+			} catch (error) {
+				console.error("Failed fetching price lists", error);
+				this.available_price_lists = [];
+			}
+			// Set default to current active price list
+			if (!this.selected_price_list_local && this.pos_profile) {
+				this.selected_price_list_local = this.active_price_list || this.pos_profile.selling_price_list;
+			}
+		},
+		onPriceListChanged(newPriceList) {
+			if (!newPriceList) return;
+			console.log("[ItemsSelector] Price List changed to:", newPriceList);
+			// Emit to Invoice.vue via event bus
+			this.eventBus.emit("update_selected_price_list", newPriceList);
+			// Also directly update local price list for instant UI response
+			this.customer_price_list = newPriceList === this.pos_profile.selling_price_list ? null : newPriceList;
+		},
 		async verifyServerItemCount() {
 			if (this.usesLimitSearch) {
 				console.log("[ItemsSelector] limit search enabled, skipping background reconciliation");
@@ -2021,8 +2048,8 @@ export default {
 					sortable: true,
 					key: "item_code",
 				},
-				{ title: __("Rate"), key: "rate", align: "start" },
 				{ title: __("Available QTY"), key: "actual_qty", align: "start" },
+				{ title: __("Rate"), key: "rate", align: "start" },
 				{ title: __("UOM"), key: "stock_uom", align: "start" },
 			];
 			if (!this.pos_profile.posa_display_item_code) {
@@ -4802,6 +4829,9 @@ export default {
 			this.get_items_groups();
 			await this.initializeItems();
 			this.items_view = this.pos_profile.posa_default_card_view ? "card" : "list";
+			// Fetch price lists and set default
+			this.selected_price_list_local = this.pos_profile.selling_price_list;
+			this.fetchAvailablePriceLists();
 		});
 		this.eventBus.on("update_cur_items_details", () => {
 			this.update_cur_items_details();
@@ -4820,9 +4850,11 @@ export default {
 			const fallback = this.pos_profile?.selling_price_list || null;
 			if (data === null || data === undefined) {
 				this.customer_price_list = fallback;
+				this.selected_price_list_local = fallback;
 				return;
 			}
 			this.customer_price_list = data;
+			this.selected_price_list_local = data;
 		});
 		this.eventBus.on("focus_item_search", () => {
 			this.focusItemSearch();
@@ -4912,6 +4944,9 @@ export default {
 				await this.get_items();
 			}
 		}
+
+		// Fetch available price lists for dropdown
+		this.fetchAvailablePriceLists();
 
 		// Setup barcode scanner if enabled
 		if (this.pos_profile?.posa_enable_barcode_scanning) {

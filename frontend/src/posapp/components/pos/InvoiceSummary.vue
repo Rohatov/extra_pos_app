@@ -27,11 +27,11 @@
 							@update:model-value="handleDiscountInputUpdate"
 							@focus="handleAdditionalDiscountFocus"
 							@blur="handleAdditionalDiscountBlur"
-							:label="discountModeLabel"
-							:prepend-inner-icon="discountMode === 'discount' ? 'mdi-cash-minus' : 'mdi-cash-check'"
+							:label="frappe._('Final Price')"
+							prepend-inner-icon="mdi-cash-check"
 							variant="solo"
 							density="compact"
-							:color="discountMode === 'discount' ? 'warning' : 'info'"
+							color="info"
 							:prefix="currencySymbol(pos_profile.currency)"
 							:disabled="
 								!pos_profile.posa_allow_user_to_edit_additional_discount ||
@@ -39,16 +39,6 @@
 							"
 							class="summary-field"
 						>
-							<template #append-inner>
-								<v-btn
-									:icon="discountMode === 'discount' ? 'mdi-swap-horizontal' : 'mdi-swap-horizontal'"
-									size="x-small"
-									variant="text"
-									:color="discountMode === 'discount' ? 'warning' : 'info'"
-									@click="toggleDiscountMode"
-									:title="discountMode === 'discount' ? frappe._('Switch to Final Price mode') : frappe._('Switch to Discount mode')"
-								/>
-							</template>
 						</v-text-field>
 					</v-col>
 
@@ -239,7 +229,6 @@ export default {
 			additionalDiscountPercentageDisplay: null,
 			isEditingAdditionalDiscount: false,
 			isEditingAdditionalDiscountPercentage: false,
-			discountMode: 'discount', // 'discount' = skidka summasi, 'final_price' = yakuniy narx
 			discountInputDisplay: null,
 		};
 	},
@@ -268,11 +257,7 @@ export default {
 			}
 			return false;
 		},
-		discountModeLabel() {
-			return this.discountMode === 'discount'
-				? frappe._('Additional Discount')
-				: frappe._('Final Price');
-		},
+
 	},
 	watch: {
 		additional_discount(value) {
@@ -307,31 +292,19 @@ export default {
 			return value;
 		},
 		syncDiscountInputDisplay() {
-			if (this.discountMode === 'discount') {
-				this.discountInputDisplay = this.normalizeDiscountDisplay(this.additional_discount);
-			} else {
-				// Final price mode: show grossTotal - discount
-				const gross = parseFloat(this.grossTotal) || 0;
-				const discount = parseFloat(this.additional_discount) || 0;
-				const finalPrice = gross - discount;
-				this.discountInputDisplay = this.normalizeDiscountDisplay(finalPrice);
-			}
+			// Final price mode: show grossTotal - discount
+			const gross = parseFloat(this.grossTotal) || 0;
+			const discount = parseFloat(this.additional_discount) || 0;
+			const finalPrice = gross - discount;
+			this.discountInputDisplay = this.normalizeDiscountDisplay(finalPrice);
 		},
-		toggleDiscountMode() {
-			this.discountMode = this.discountMode === 'discount' ? 'final_price' : 'discount';
-			this.syncDiscountInputDisplay();
-		},
+
 		handleDiscountInputUpdate(value) {
-			if (this.discountMode === 'discount') {
-				// Direct discount: value is the discount amount
-				this.$emit("update:additional_discount", value);
-			} else {
-				// Final price mode: discount = grossTotal - entered value
-				const gross = parseFloat(this.grossTotal) || 0;
-				const enteredPrice = parseFloat(value) || 0;
-				const discount = gross - enteredPrice;
-				this.$emit("update:additional_discount", discount >= 0 ? discount : 0);
-			}
+			// Final price mode: discount = grossTotal - entered value
+			const gross = parseFloat(this.grossTotal) || 0;
+			const enteredPrice = parseFloat(value) || 0;
+			const discount = gross - enteredPrice;
+			this.$emit("update:additional_discount", discount >= 0 ? discount : 0);
 		},
 		// Debounced handlers for better performance
 		handleAdditionalDiscountUpdate(value) {
