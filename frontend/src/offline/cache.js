@@ -79,6 +79,7 @@ export const memory = {
 	translation_cache: {},
 	coupons_cache: {},
 	item_groups_cache: [],
+	price_list_names: [],
 	pricing_rules_snapshot: [],
 	pricing_rules_context: null,
 	pricing_rules_last_sync: null,

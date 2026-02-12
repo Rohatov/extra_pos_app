@@ -47,6 +47,24 @@ export function getCachedOffers() {
 	}
 }
 
+// Price list names cache for offline dropdown
+export function savePriceListNames(names) {
+	try {
+		memory.price_list_names = names;
+		persist("price_list_names", names);
+	} catch (e) {
+		console.error("Failed to cache price list names", e);
+	}
+}
+
+export function getCachedPriceListNames() {
+	try {
+		return memory.price_list_names || [];
+	} catch {
+		return [];
+	}
+}
+
 // Price list rate storage using dedicated table
 export async function savePriceListItems(priceList, items) {
 	try {

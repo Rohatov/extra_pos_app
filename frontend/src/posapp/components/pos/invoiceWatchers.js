@@ -109,16 +109,18 @@ export default {
 		this.posting_date = this.formatDateForBackend(newVal);
 	},
 
-	selected_price_list(newVal) {
-		// Clear cached price list items to avoid mixing rates
-		clearPriceListCache();
+	selected_price_list(newVal, oldVal) {
+		// Clear only the OLD price list cache to avoid mixing rates
+		// Do NOT clear the new price list cache — we need it for offline
+		if (oldVal && oldVal !== newVal) {
+			clearPriceListCache(oldVal);
+		}
 
 		// Respect the user's manual selection — do NOT override with get_effective_price_list()
 		const applied = newVal || this.pos_profile?.selling_price_list;
 
-		// Send null if same as profile default (ItemsSelector will use its own fallback)
-		const price_list = applied === this.pos_profile.selling_price_list ? null : applied;
-		this.eventBus.emit("update_customer_price_list", price_list);
+		// Always send the actual price list name so ItemsSelector can use it for caching
+		this.eventBus.emit("update_customer_price_list", applied);
 		this.apply_cached_price_list(applied);
 
 		// If multi-currency is enabled, sync currency with the price list currency

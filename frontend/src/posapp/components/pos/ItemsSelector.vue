@@ -877,18 +877,32 @@ export default {
 					// Fallback to full reload if nothing is loaded
 					if (!this.itemsLoaded || !this.items.length) {
 						if (!isOffline()) {
-							this.get_items(true);
+							await this.get_items(true);
+							// Cache prices for offline use
+							if (this.customer_price_list && this.items.length) {
+								savePriceListItems(this.customer_price_list, this.items);
+							}
 						} else {
 							this.get_items();
 						}
 					} else {
 						// Only refresh prices for visible items when smart reload is enabled
-						this.$nextTick(() => this.refreshPricesForVisibleItems());
+						this.$nextTick(async () => {
+							await this.refreshPricesForVisibleItems();
+							// Cache prices for offline use
+							if (this.customer_price_list && this.items.length) {
+								savePriceListItems(this.customer_price_list, this.items);
+							}
+						});
 					}
 				} else {
 					// Fall back to full reload
 					if (!isOffline()) {
-						this.get_items(true);
+						await this.get_items(true);
+						// Cache prices for offline use
+						if (this.customer_price_list && this.items.length) {
+							savePriceListItems(this.customer_price_list, this.items);
+						}
 					} else {
 						this.get_items();
 					}
@@ -922,7 +936,11 @@ export default {
 			}
 			// No cache found - force a reload so prices are updated
 			if (!isOffline()) {
-				this.get_items(true);
+				await this.get_items(true);
+				// Cache prices for offline use
+				if (this.customer_price_list && this.items.length) {
+					savePriceListItems(this.customer_price_list, this.items);
+				}
 			} else {
 				if (this.pos_profile && (!this.pos_profile.posa_local_storage || !this.storageAvailable)) {
 					this.get_items(true);
@@ -1926,6 +1944,16 @@ export default {
 				this.replaceBarcodeIndex(resolvedItems);
 				this.eventBus.emit("set_all_items", resolvedItems);
 				this.scheduleLastInvoiceRateRefresh();
+
+				// Cache prices for offline use whenever items are loaded from server
+				if (force_server && this.customer_price_list && resolvedItems.length) {
+					savePriceListItems(this.customer_price_list, resolvedItems);
+				}
+				// Also cache for active_price_list (covers default price list on init)
+				const activePL = this.active_price_list;
+				if (activePL && activePL !== this.customer_price_list && resolvedItems.length) {
+					savePriceListItems(activePL, resolvedItems);
+				}
 
 				const progress = this.loadProgress
 					? this.loadProgress

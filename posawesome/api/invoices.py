@@ -104,8 +104,12 @@ def _sanitize_item_name(name: str) -> str:
 def _resolve_effective_price_list(
     customer_name: str | None,
     pos_profile: str | None,
-    fallback_price_list: str | None = None,
+    selected_price_list: str | None = None,
 ) -> str | None:
+    # Priority: user-selected dropdown > customer default > POS profile default
+    if selected_price_list:
+        return selected_price_list
+
     customer_price_list = None
     if customer_name:
         customer_price_list = frappe.db.get_value("Customer", customer_name, "default_price_list")
@@ -117,7 +121,7 @@ def _resolve_effective_price_list(
         if profile_price_list:
             return profile_price_list
 
-    return fallback_price_list
+    return None
 
 
 def _build_invoice_remarks(invoice_doc):
@@ -751,7 +755,22 @@ def update_invoice(data):
     invoice_doc.flags.ignore_permissions = True
     frappe.flags.ignore_account_permission = True
     invoice_doc.docstatus = 0
-    invoice_doc.save()
+    # Suppress "Payment Entry linked against Order" messages during POS save
+    frappe.flags.mute_messages = True
+    try:
+        invoice_doc.save()
+    finally:
+        frappe.flags.mute_messages = False
+    # Re-set price list after save in case ERPNext controllers overrode it
+    if effective_price_list and invoice_doc.selling_price_list != effective_price_list:
+        frappe.db.set_value(
+            invoice_doc.doctype,
+            invoice_doc.name,
+            "selling_price_list",
+            effective_price_list,
+            update_modified=False,
+        )
+        invoice_doc.selling_price_list = effective_price_list
 
     # Return both the invoice doc and the updated data
     response = invoice_doc.as_dict()
@@ -962,6 +981,9 @@ def submit_invoice(invoice, data, submit_in_background=False):
         invoice_doc = frappe.get_doc(doctype, invoice_name)
         invoice_doc.update(invoice)
 
+    # Preserve the user-selected price list from frontend
+    desired_price_list = invoice.get("selling_price_list")
+
     _deduplicate_free_items(invoice_doc)
 
     if invoice_doc.redeem_loyalty_points and not invoice_doc.loyalty_program:
@@ -1040,7 +1062,24 @@ def submit_invoice(invoice, data, submit_in_background=False):
     invoice_doc.flags.ignore_permissions = True
     frappe.flags.ignore_account_permission = True
     invoice_doc.posa_is_printed = 1
-    invoice_doc.save()
+    if desired_price_list:
+        invoice_doc.selling_price_list = desired_price_list
+    # Suppress "Payment Entry linked against Order" messages during POS submit
+    frappe.flags.mute_messages = True
+    try:
+        invoice_doc.save()
+    finally:
+        frappe.flags.mute_messages = False
+    # Re-set price list after save in case ERPNext controllers overrode it
+    if desired_price_list and invoice_doc.selling_price_list != desired_price_list:
+        frappe.db.set_value(
+            invoice_doc.doctype,
+            invoice_doc.name,
+            "selling_price_list",
+            desired_price_list,
+            update_modified=False,
+        )
+        invoice_doc.selling_price_list = desired_price_list
 
     if data.get("due_date"):
         frappe.db.set_value(
@@ -1419,7 +1458,19 @@ def search_invoices_for_return(
 @frappe.whitelist()
 def create_sales_invoice_from_order(sales_order):
     sales_invoice = make_sales_invoice(sales_order, ignore_permissions=True)
-    sales_invoice.save()
+    sales_invoice.flags.ignore_permissions = True
+    frappe.flags.ignore_account_permission = True
+    # Auto-pull advance entries from the Sales Order payment
+    # and suppress the "Payment Entry linked" message
+    frappe.flags.mute_messages = True
+    try:
+        sales_invoice.save()
+        # Pull advance entries (payments linked to the Sales Order)
+        if hasattr(sales_invoice, 'set_advances'):
+            sales_invoice.set_advances()
+            sales_invoice.save()
+    finally:
+        frappe.flags.mute_messages = False
     return sales_invoice
 
 
@@ -1442,7 +1493,14 @@ def update_invoice_from_order(data):
     invoice_doc = frappe.get_doc("Sales Invoice", data.get("name"))
     invoice_doc.update(data)
     _deduplicate_free_items(invoice_doc)
-    invoice_doc.save()
+    invoice_doc.flags.ignore_permissions = True
+    frappe.flags.ignore_account_permission = True
+    # Suppress "Payment Entry linked against Order" messages
+    frappe.flags.mute_messages = True
+    try:
+        invoice_doc.save()
+    finally:
+        frappe.flags.mute_messages = False
     return invoice_doc
 
 

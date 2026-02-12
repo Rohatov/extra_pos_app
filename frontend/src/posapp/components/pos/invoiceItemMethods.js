@@ -1615,7 +1615,7 @@ export default {
 			if (!this.invoiceTypes.includes("Quotation")) {
 				this.invoiceTypes = ["Invoice", "Order", "Quotation"];
 			}
-		} else if (data.doctype === "Sales Order" && this.pos_profile?.posa_create_only_sales_order) {
+		} else if (data.doctype === "Sales Order") {
 			this.invoiceType = "Order";
 			if (!this.invoiceTypes.includes("Order")) {
 				this.invoiceTypes = ["Invoice", "Order", "Quotation"];
@@ -1914,7 +1914,7 @@ export default {
 		// Always set these fields first
 		if (this.invoiceType === "Quotation") {
 			doc.doctype = "Quotation";
-		} else if (this.invoiceType === "Order" && this.pos_profile.posa_create_only_sales_order) {
+		} else if (this.invoiceType === "Order") {
 			doc.doctype = "Sales Order";
 		} else if (this.pos_profile.create_pos_invoice_instead_of_sales_invoice) {
 			doc.doctype = "POS Invoice";
@@ -2210,9 +2210,14 @@ export default {
 				item.posa_is_replace = updatedData.posa_is_replace;
 				item.is_free_item = updatedData.is_free_item;
 				item.qty = flt(updatedData.qty);
-				item.rate = flt(updatedData.rate);
+				// Preserve Sales Order rates — only override if user manually changed rate
+				// The Sales Invoice from SO should use agreed-upon order rates
+				// to avoid ERPNext overbilling limit errors
+				if (!item.rate || item.rate === 0) {
+					item.rate = flt(updatedData.rate);
+				}
 				item.uom = updatedData.uom;
-				item.amount = flt(updatedData.qty) * flt(updatedData.rate);
+				item.amount = flt(item.qty) * flt(item.rate);
 				item.conversion_factor = updatedData.conversion_factor;
 				item.serial_no = updatedData.serial_no;
 				item.discount_percentage = flt(updatedData.discount_percentage);
@@ -2220,7 +2225,9 @@ export default {
 				item.batch_no = updatedData.batch_no;
 				item.posa_notes = updatedData.posa_notes;
 				item.posa_delivery_date = this.formatDateForDisplay(updatedData.posa_delivery_date);
-				item.price_list_rate = updatedData.price_list_rate;
+				if (!item.price_list_rate || item.price_list_rate === 0) {
+					item.price_list_rate = updatedData.price_list_rate;
+				}
 				Items.push(item);
 			}
 		});
@@ -2505,7 +2512,7 @@ export default {
 		}
 
 		const method =
-			doc.doctype === "Sales Order" && this.pos_profile.posa_create_only_sales_order
+			doc.doctype === "Sales Order"
 				? "posawesome.posawesome.api.sales_orders.update_sales_order"
 				: doc.doctype === "Quotation"
 					? "posawesome.posawesome.api.quotations.update_quotation"
@@ -2705,7 +2712,7 @@ export default {
 			if (!doctype) {
 				if (this.invoiceType === "Quotation") {
 					doctype = "Quotation";
-				} else if (this.invoiceType === "Order" && this.pos_profile?.posa_create_only_sales_order) {
+				} else if (this.invoiceType === "Order") {
 					doctype = "Sales Order";
 				} else if (this.pos_profile?.create_pos_invoice_instead_of_sales_invoice) {
 					doctype = "POS Invoice";
@@ -3256,7 +3263,6 @@ export default {
 			let invoice_doc;
 			if (
 				this.invoiceType === "Order" &&
-				this.pos_profile.posa_create_only_sales_order &&
 				!this.new_delivery_date &&
 				!(this.invoice_doc && this.invoice_doc.posa_delivery_date)
 			) {
@@ -4218,10 +4224,11 @@ export default {
 
 	// Get price list for current customer
 	get_effective_price_list() {
-		// Benchmark note: keep this resolver O(1) to avoid extra lookups in pricing loops.
+		// Priority: user-selected dropdown > customer price list > POS profile default
+		const selectedPriceList = this.selected_price_list || null;
 		const customerPriceList = this.customer_info?.customer_price_list || null;
 		const profilePriceList = this.pos_profile?.selling_price_list || null;
-		return customerPriceList || profilePriceList;
+		return selectedPriceList || customerPriceList || profilePriceList;
 	},
 
 	get_price_list() {

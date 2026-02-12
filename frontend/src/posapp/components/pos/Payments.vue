@@ -1183,6 +1183,10 @@ export default {
 							if (msgObj.errors && Array.isArray(msgObj.errors)) {
 								return this.formatStockErrors(msgObj.errors);
 							}
+							// Handle {message: "..."} format
+							if (msgObj.message) {
+								return frappe.utils.strip_html(msgObj.message);
+							}
 						} catch {
 							/* Not a JSON string */
 						}
@@ -1195,7 +1199,7 @@ export default {
 					/* ignore parse issues */
 				}
 			}
-			if (exc?.message) {
+			if (exc?.message && typeof exc.message === "string") {
 				try {
 					const parsed = JSON.parse(exc.message);
 					if (parsed.errors && Array.isArray(parsed.errors)) {
@@ -1205,6 +1209,22 @@ export default {
 					/* Not a JSON string */
 				}
 				return exc.message;
+			}
+			// Handle plain objects with exc or exception fields
+			if (exc?.exc) {
+				return typeof exc.exc === "string" ? exc.exc : JSON.stringify(exc.exc);
+			}
+			if (exc?.exception) {
+				return typeof exc.exception === "string" ? exc.exception : JSON.stringify(exc.exception);
+			}
+			// Fallback: try JSON.stringify for objects
+			if (typeof exc === "object") {
+				try {
+					const str = JSON.stringify(exc);
+					return str.length > 200 ? str.substring(0, 200) + "..." : str;
+				} catch {
+					return __("Unknown error");
+				}
 			}
 			return exc.toString ? exc.toString() : __("Unknown error");
 		},
@@ -1310,8 +1330,12 @@ export default {
 
 				const invoiceTotal = this.invoice_doc.rounded_total || this.invoice_doc.grand_total;
 
+				// Quotation does not require any payment — skip credit/partial validation
+				const isQuotation = this.invoiceType === "Quotation";
+
 				// Credit Sale validation - if no payment entered, must have credit sale permission
 				if (
+					!isQuotation &&
 					this.isAutoCreditSale &&
 					!this.invoice_doc.is_return &&
 					invoiceTotal > 0 &&
@@ -1327,6 +1351,7 @@ export default {
 
 				// Partly Paid validation - if partial payment, must have partial payment permission
 				if (
+					!isQuotation &&
 					this.isPartlyPaid &&
 					!this.invoice_doc.is_return &&
 					invoiceTotal > 0 &&
@@ -1497,7 +1522,7 @@ export default {
 			try {
 				const r = await frappe.call({
 					method:
-						this.invoiceType === "Order" && this.pos_profile.posa_create_only_sales_order
+						this.invoiceType === "Order"
 							? "posawesome.posawesome.api.sales_orders.submit_sales_order"
 							: this.invoiceType === "Quotation"
 								? "posawesome.posawesome.api.quotations.submit_quotation"
@@ -1557,6 +1582,10 @@ export default {
 					return;
 				}
 
+				// Update invoice_doc with response name so print uses the correct document
+				if (r.message?.name) {
+					this.invoice_doc.name = r.message.name;
+				}
 				if (print) {
 					this.load_print_page();
 				}
@@ -1565,10 +1594,10 @@ export default {
 				this.is_cashback = true;
 				this.is_credit_return = false;
 				this.sales_person = "";
-				this.eventBus.emit("set_last_invoice", this.invoice_doc.name);
+				this.eventBus.emit("set_last_invoice", r.message?.name || this.invoice_doc.name);
 				this.eventBus.emit("show_message", {
 					title:
-						this.invoiceType === "Order" && this.pos_profile.posa_create_only_sales_order
+						this.invoiceType === "Order"
 							? __("Sales Order {0} is Submitted", [r.message.name])
 							: this.invoiceType === "Quotation"
 								? __("Quotation {0} is Submitted", [r.message.name])
@@ -1744,7 +1773,7 @@ export default {
 
 			if (this.invoiceType === "Quotation") {
 				doctype = "Quotation";
-			} else if (this.invoiceType === "Order" && this.pos_profile.posa_create_only_sales_order) {
+			} else if (this.invoiceType === "Order") {
 				doctype = "Sales Order";
 			} else if (this.pos_profile.create_pos_invoice_instead_of_sales_invoice) {
 				doctype = "POS Invoice";

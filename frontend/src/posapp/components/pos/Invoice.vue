@@ -353,7 +353,7 @@ import { useCustomersStore } from "../../stores/customersStore.js";
 import { storeToRefs } from "pinia";
 import stockCoordinator from "../../utils/stockCoordinator.js";
 import { parseBooleanSetting } from "../../utils/stock.js";
-import { isOffline, getDraftInvoices, setDraftInvoices } from "../../../offline/index.js";
+import { isOffline, getDraftInvoices, setDraftInvoices, savePriceListNames, getCachedPriceListNames } from "../../../offline/index.js";
 
 export default {
 	name: "POSInvoice",
@@ -1065,16 +1065,29 @@ export default {
 		},
 
 		async fetch_price_lists() {
-			try {
-				const r = await frappe.call({
-					method: "posawesome.posawesome.api.utilities.get_selling_price_lists",
-				});
-				if (r && r.message) {
-					this.price_lists = r.message.map((pl) => pl.name);
+			// If offline, use cached price list names
+			if (isOffline()) {
+				const cached = getCachedPriceListNames();
+				if (cached && cached.length) {
+					this.price_lists = cached;
+				} else {
+					this.price_lists = [this.pos_profile.selling_price_list];
 				}
-			} catch (error) {
-				console.error("Failed fetching price lists", error);
-				this.price_lists = [this.pos_profile.selling_price_list];
+			} else {
+				try {
+					const r = await frappe.call({
+						method: "posawesome.posawesome.api.utilities.get_selling_price_lists",
+					});
+					if (r && r.message) {
+						this.price_lists = r.message.map((pl) => pl.name);
+						// Cache for offline use
+						savePriceListNames(this.price_lists);
+					}
+				} catch (error) {
+					console.error("Failed fetching price lists", error);
+					const cached = getCachedPriceListNames();
+					this.price_lists = (cached && cached.length) ? cached : [this.pos_profile.selling_price_list];
+				}
 			}
 
 			if (!this.selected_price_list) {
