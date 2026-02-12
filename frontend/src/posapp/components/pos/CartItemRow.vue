@@ -541,38 +541,23 @@ export default {
    We might need to rely on global styles or duplicate some here.
 */
 
-/* QTY Counter Styling - Compact */
+/* QTY Counter Styling - Minimalist */
 .qty-control-btn {
-	width: 20px !important;
-	height: 20px !important;
-	min-width: 20px !important;
+	width: 22px !important;
+	height: 22px !important;
+	min-width: 22px !important;
 	border-radius: 4px !important;
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-	box-shadow:
-		0 1px 4px var(--pos-shadow-light),
-		0 1px 2px var(--pos-shadow-light) !important;
+	transition: background-color 0.15s ease, transform 0.1s ease !important;
+	box-shadow: none !important;
 	font-weight: 600 !important;
-	backdrop-filter: blur(10px) !important;
 	position: relative !important;
 	overflow: hidden !important;
 	flex-shrink: 0;
+	backdrop-filter: none !important;
 }
 
 .qty-control-btn::before {
-	content: "";
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: var(--pos-hover-bg);
-	transition: transform 0.3s ease;
-	transform: translateX(-100%);
-	z-index: 0;
-}
-
-.qty-control-btn:hover::before {
-	transform: translateX(0);
+	display: none;
 }
 
 .qty-control-btn .v-icon {
@@ -584,26 +569,23 @@ export default {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: 2px;
-	padding: 2px;
-	min-width: 60px;
-	max-width: 100px;
+	gap: 4px;
+	padding: 2px 4px;
+	min-width: 70px;
+	max-width: 110px;
 	width: auto;
 	height: auto;
-	background: var(--pos-surface-variant);
-	border-radius: 8px;
-	backdrop-filter: blur(10px);
-	border: 1px solid var(--pos-border-light);
-	transition: all 0.3s ease;
+	background: transparent;
+	border-radius: 4px;
+	border: none;
+	transition: background-color 0.2s ease;
 	margin: 0 auto;
 	flex-shrink: 0;
 	box-sizing: border-box;
 }
 
 .pos-table__qty-counter:hover {
-	background: var(--pos-hover-bg);
-	box-shadow: 0 4px 16px var(--pos-shadow);
-	transform: translateY(-1px);
+	background: var(--pos-hover-bg, rgba(0, 0, 0, 0.04));
 }
 
 /* RTL support for quantity counter - Enhanced with multiple selectors */
@@ -630,37 +612,46 @@ export default {
 }
 
 .pos-table__qty-display {
-	min-width: 15px;
-	max-width: 40px;
+	min-width: 28px;
+	max-width: 50px;
 	width: auto;
 	flex: 1 1 auto;
 	text-align: center;
 	font-weight: 600;
-	padding: 0 2px;
-	border-radius: 3px;
-	background: var(--pos-primary-container);
-	border: 1px solid var(--pos-primary-variant);
+	padding: 2px 6px;
+	border-radius: 0;
+	background: var(--control-bg, rgba(0, 0, 0, 0.02));
+	border: none;
+	border-bottom: 2px solid var(--primary, #2490ef);
 	font-family:
-		"SF Pro Display", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans Arabic", "Tahoma",
-		sans-serif;
-	font-variant-numeric: lining-nums tabular-nums;
-	font-feature-settings:
-		"tnum" 1,
-		"lnum" 1,
-		"kern" 1;
-	color: var(--pos-primary);
-	font-size: 0.75rem;
-	transition: all 0.2s ease;
-	box-shadow: 0 1px 2px var(--pos-shadow-light);
+		"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+	font-variant-numeric: tabular-nums lining-nums;
+	font-feature-settings: "tnum" 1, "lnum" 1;
+	color: var(--text-color, #1f272e);
+	font-size: 0.8rem;
+	transition: border-color 0.2s ease, background-color 0.2s ease;
+	box-shadow: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 20px;
+	height: 22px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	letter-spacing: -0.02em;
-	word-spacing: -0.1em;
+	letter-spacing: -0.01em;
+	cursor: pointer;
+}
+
+.pos-table__qty-display:hover {
+	background: var(--control-bg-on-gray, rgba(0, 0, 0, 0.04));
+	border-bottom-color: var(--primary-dark, #1a73e8);
+}
+
+.pos-table__qty-display:focus-visible {
+	outline: none;
+	border-bottom-width: 2px;
+	border-bottom-color: var(--primary, #2490ef);
+	background: var(--control-bg, rgba(0, 0, 0, 0.02));
 }
 
 .pos-table__qty-display.large-number {
@@ -678,81 +669,56 @@ export default {
 }
 
 .qty-control-btn:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 2px 6px var(--pos-shadow) !important;
+	transform: scale(1.05);
 }
 
 .qty-control-btn.minus-btn {
-	background: var(--pos-button-warning-bg) !important;
-	color: var(--pos-button-warning-text) !important;
-	border: 2px solid var(--pos-button-warning-border) !important;
+	background: var(--orange-50, #fff3e0) !important;
+	color: var(--orange, #f57c00) !important;
+	border: 1px solid var(--orange-100, #ffe0b2) !important;
 }
 
 .qty-control-btn.minus-btn:hover {
-	background: var(--pos-button-warning-hover-bg) !important;
-	color: var(--pos-button-warning-hover-text) !important;
-	box-shadow:
-		0 6px 20px var(--pos-shadow),
-		0 4px 8px var(--pos-shadow-light) !important;
-	transform: translateY(-2px) scale(1.05) !important;
+	background: var(--orange-100, #ffe0b2) !important;
+	box-shadow: none !important;
+	transform: scale(1.08) !important;
 }
 
 .qty-control-btn.plus-btn {
-	background: var(--pos-button-success-bg) !important;
-	color: var(--pos-button-success-text) !important;
-	border: 2px solid var(--pos-button-success-border) !important;
+	background: var(--green-50, #e8f5e9) !important;
+	color: var(--green, #43a047) !important;
+	border: 1px solid var(--green-100, #c8e6c9) !important;
 }
 
 .qty-control-btn.plus-btn:hover {
-	background: var(--pos-button-success-hover-bg) !important;
-	color: var(--pos-button-success-hover-text) !important;
-	box-shadow:
-		0 6px 20px var(--pos-shadow),
-		0 4px 8px var(--pos-shadow-light) !important;
-	transform: translateY(-2px) scale(1.05) !important;
+	background: var(--green-100, #c8e6c9) !important;
+	box-shadow: none !important;
+	transform: scale(1.08) !important;
 }
 
-/* Delete action button styling - compact height */
+/* Delete action button styling - minimalist */
 .delete-action-btn {
-	min-width: 28px !important;
-	height: 28px !important;
-	border-radius: 6px !important;
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-	box-shadow:
-		0 2px 6px var(--pos-shadow),
-		0 1px 2px var(--pos-shadow-light) !important;
+	min-width: 26px !important;
+	height: 26px !important;
+	border-radius: 4px !important;
+	transition: background-color 0.15s ease, transform 0.1s ease !important;
+	box-shadow: none !important;
 	font-weight: 600 !important;
-	background: var(--pos-button-error-bg) !important;
-	color: var(--pos-button-error-text) !important;
-	border: 1px solid var(--pos-button-error-border) !important;
+	background: var(--red-50, #ffebee) !important;
+	color: var(--red, #e53935) !important;
+	border: 1px solid var(--red-100, #ffcdd2) !important;
 	position: relative !important;
 	overflow: hidden !important;
 }
 
 .delete-action-btn::before {
-	content: "";
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: var(--pos-hover-bg);
-	transition: transform 0.3s ease;
-	transform: translateX(-100%);
-	z-index: 0;
-}
-
-.delete-action-btn:hover::before {
-	transform: translateX(0);
+	display: none;
 }
 
 .delete-action-btn:hover {
-	transform: translateY(-2px) scale(1.05);
-	box-shadow:
-		0 8px 24px var(--pos-shadow-dark),
-		0 4px 8px var(--pos-shadow) !important;
-	background: var(--pos-button-error-hover-bg) !important;
-	color: var(--pos-button-error-hover-text) !important;
+	transform: scale(1.08);
+	box-shadow: none !important;
+	background: var(--red-100, #ffcdd2) !important;
 }
 
 .delete-action-btn .v-icon {
@@ -780,65 +746,88 @@ export default {
 	margin: 0;
 }
 .pos-table__qty-input :deep(.v-input__control) {
-	height: 20px;
+	height: 22px;
 }
 .pos-table__qty-input :deep(.v-field__field) {
-	height: 20px;
-	padding: 0 2px;
+	height: 22px;
+	padding: 0 4px;
 }
 .pos-table__qty-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 20px;
-	font-size: 0.75rem;
+	min-height: 22px;
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+.pos-table__qty-input :deep(.v-field) {
+	border-radius: 0 !important;
+	border: none !important;
+	border-bottom: 2px solid var(--primary, #2490ef) !important;
+	box-shadow: none !important;
+	background: var(--control-bg, rgba(0, 0, 0, 0.02)) !important;
+}
+.pos-table__qty-input :deep(.v-field--focused) {
+	border-bottom-color: var(--primary-dark, #1a73e8) !important;
 }
 .pos-table__editor-box {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 2px;
-	padding: 2px;
-	min-width: 60px;
-	max-width: 100px;
+	padding: 0;
+	min-width: 50px;
+	max-width: 90px;
 	width: auto;
 	height: auto;
-	background: var(--pos-surface-variant);
-	border-radius: 8px;
-	border: 1px solid var(--pos-border-light);
-	transition: all 0.3s ease;
+	background: transparent;
+	border-radius: 0;
+	border: none;
+	transition: none;
 	margin: 0 auto;
 	flex-shrink: 0;
 	box-sizing: border-box;
 }
 
 .pos-table__editor-box:hover {
-	background: var(--pos-hover-bg);
-	box-shadow: 0 4px 16px var(--pos-shadow);
-	transform: translateY(-1px);
+	background: transparent;
+	box-shadow: none;
+	transform: none;
 }
 
 .pos-table__editor-display {
-	min-width: 40px;
+	min-width: 45px;
 	max-width: 80px;
 	width: auto;
 	flex: 1 1 auto;
 	text-align: center;
 	font-weight: 600;
-	padding: 0 2px;
-	border-radius: 3px;
-	background: var(--pos-primary-container);
-	border: 1px solid var(--pos-primary-variant);
-	color: var(--pos-primary);
-	font-size: 0.75rem;
-	transition: all 0.2s ease;
-	box-shadow: 0 1px 2px var(--pos-shadow-light);
+	padding: 2px 4px;
+	border-radius: 0;
+	background: var(--control-bg, rgba(0, 0, 0, 0.02));
+	border: none;
+	border-bottom: 1px solid var(--border-color, #d1d8dd);
+	color: var(--text-color, #1f272e);
+	font-size: 0.8rem;
+	transition: border-color 0.2s ease, background-color 0.2s ease;
+	box-shadow: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	height: 20px;
+	height: 22px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	cursor: pointer;
+}
+
+.pos-table__editor-display:hover {
+	background: var(--control-bg-on-gray, rgba(0, 0, 0, 0.04));
+	border-bottom-color: var(--primary, #2490ef);
+}
+
+.pos-table__editor-display:focus-visible {
+	outline: none;
+	border-bottom: 2px solid var(--primary, #2490ef);
+	background: var(--control-bg, rgba(0, 0, 0, 0.02));
 }
 
 .pos-table__editor-btn {
@@ -851,19 +840,30 @@ export default {
 	max-width: 80px;
 }
 .pos-table__editor-input :deep(.v-input__control) {
-	height: 20px;
+	height: 22px;
 }
 .pos-table__editor-input :deep(.v-field__field) {
-	height: 20px;
-	padding: 0 2px;
+	height: 22px;
+	padding: 0 4px;
 }
 .pos-table__editor-input :deep(.v-field__input) {
 	padding: 0;
-	min-height: 20px;
-	font-size: 0.75rem;
+	min-height: 22px;
+	font-size: 0.8rem;
+	font-weight: 600;
 }
 .pos-table__editor-input :deep(input) {
 	text-align: center;
+}
+.pos-table__editor-input :deep(.v-field) {
+	border-radius: 0 !important;
+	border: none !important;
+	border-bottom: 2px solid var(--primary, #2490ef) !important;
+	box-shadow: none !important;
+	background: var(--control-bg, rgba(0, 0, 0, 0.02)) !important;
+}
+.pos-table__editor-input :deep(.v-field--focused) {
+	border-bottom-color: var(--primary-dark, #1a73e8) !important;
 }
 
 .uom-editor {
@@ -910,6 +910,9 @@ export default {
 	height: 100%;
 	padding: 0;
 	margin: 0;
+	background: transparent;
+	border: none;
+	box-shadow: none;
 }
 
 .currency-display.right-aligned {
@@ -917,16 +920,15 @@ export default {
 }
 
 .amount-value {
-	font-weight: 500;
-	text-align: left;
+	font-weight: 600;
+	text-align: center;
 	font-family:
-		"SF Pro Display", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans Arabic", "Tahoma",
-		sans-serif;
-	font-variant-numeric: lining-nums tabular-nums;
-	font-feature-settings:
-		"tnum" 1,
-		"lnum" 1,
-		"kern" 1;
+		"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+	font-variant-numeric: tabular-nums lining-nums;
+	font-feature-settings: "tnum" 1, "lnum" 1;
+	color: var(--text-color, #1f272e);
+	font-size: 0.8rem;
+	letter-spacing: -0.01em;
 }
 
 .amount-value.right-aligned {
@@ -934,13 +936,15 @@ export default {
 }
 
 .currency-symbol {
-	opacity: 0.7;
-	margin-right: 2px;
-	font-size: 0.85em;
+	opacity: 0.5;
+	margin-right: 1px;
+	font-size: 0.75em;
+	font-weight: 400;
+	color: var(--text-muted, #6c7680);
 }
 
 .negative-number {
-	color: var(--pos-error) !important;
+	color: var(--red, #e53935) !important;
 	font-weight: 600;
 }
 
@@ -954,11 +958,16 @@ td {
 	position: relative;
 }
 
-/* Keyboard focus styles */
-.pos-table__qty-display:focus-visible,
+/* Keyboard focus styles - minimal and functional */
+.pos-table__qty-display:focus-visible {
+	outline: none;
+	border-bottom: 2px solid var(--primary, #2490ef);
+	background: var(--control-bg-on-gray, rgba(0, 0, 0, 0.04));
+}
+
 .pos-table__editor-display:focus-visible {
-	outline: 2px solid var(--pos-primary);
-	outline-offset: 2px;
-	z-index: 10;
+	outline: none;
+	border-bottom: 2px solid var(--primary, #2490ef);
+	background: var(--control-bg-on-gray, rgba(0, 0, 0, 0.04));
 }
 </style>

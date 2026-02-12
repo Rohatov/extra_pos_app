@@ -3048,38 +3048,18 @@ body[dir="rtl"] .amount-value.right-aligned {
 	background-color: var(--surface-secondary);
 }
 
-/* QTY Counter Styling - Compact */
+/* QTY Counter Styling - Compact & Minimalist */
 .qty-control-btn {
 	width: 20px !important;
 	height: 20px !important;
 	min-width: 20px !important;
 	border-radius: 4px !important;
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-	box-shadow:
-		0 1px 4px var(--pos-shadow-light),
-		0 1px 2px var(--pos-shadow-light) !important;
+	transition: all 0.2s ease !important;
+	box-shadow: none !important;
 	font-weight: 600 !important;
-	backdrop-filter: blur(10px) !important;
 	position: relative !important;
 	overflow: hidden !important;
 	flex-shrink: 0;
-}
-
-.qty-control-btn::before {
-	content: "";
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: var(--pos-hover-bg);
-	transition: transform 0.3s ease;
-	transform: translateX(-100%);
-	z-index: 0;
-}
-
-.qty-control-btn:hover::before {
-	transform: translateX(0);
 }
 
 .qty-control-btn .v-icon {
@@ -3098,11 +3078,10 @@ body[dir="rtl"] .amount-value.right-aligned {
 	max-width: 100px;
 	width: auto;
 	height: auto;
-	background: var(--pos-surface-variant);
-	border-radius: 8px;
-	backdrop-filter: blur(10px);
-	border: 1px solid var(--pos-border-light);
-	transition: all 0.3s ease;
+	background: transparent;
+	border-radius: 6px;
+	border: none;
+	transition: all 0.2s ease;
 	margin: 0 auto;
 	/* Allow container to grow with content */
 	flex-shrink: 0;
@@ -3110,9 +3089,7 @@ body[dir="rtl"] .amount-value.right-aligned {
 }
 
 .pos-table__qty-counter:hover {
-	background: var(--pos-hover-bg);
-	box-shadow: 0 4px 16px var(--pos-shadow);
-	transform: translateY(-1px);
+	background: transparent;
 }
 
 /* RTL support for quantity counter - Enhanced with multiple selectors */
@@ -3195,9 +3172,10 @@ body[dir="rtl"] .number-field-rtl {
 	text-align: center;
 	font-weight: 600;
 	padding: 0 2px;
-	border-radius: 4px;
-	background: var(--pos-primary-container);
-	border: 1px solid var(--pos-primary-variant);
+	border-radius: 2px;
+	background: rgba(var(--pos-primary-rgb), 0.04);
+	border: none;
+	border-bottom: 1px solid rgba(var(--pos-primary-rgb), 0.2);
 	font-family:
 		"SF Pro Display", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans Arabic", "Tahoma",
 		sans-serif;
@@ -3209,7 +3187,7 @@ body[dir="rtl"] .number-field-rtl {
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 2px var(--pos-shadow-light);
+	box-shadow: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -3273,49 +3251,46 @@ body[dir="rtl"] .number-field-rtl {
 }
 
 .qty-control-btn:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 2px 6px var(--pos-shadow) !important;
+	transform: none;
+	box-shadow: none !important;
+	opacity: 0.8;
 }
 
 .qty-control-btn.minus-btn {
 	background: var(--pos-button-warning-bg) !important;
 	color: var(--pos-button-warning-text) !important;
-	border: 2px solid var(--pos-button-warning-border) !important;
+	border: 1px solid var(--pos-button-warning-border) !important;
 }
 
 .qty-control-btn.minus-btn:hover {
 	background: var(--pos-button-warning-hover-bg) !important;
 	color: var(--pos-button-warning-hover-text) !important;
-	box-shadow:
-		0 6px 20px var(--pos-shadow),
-		0 4px 8px var(--pos-shadow-light) !important;
-	transform: translateY(-2px) scale(1.05) !important;
+	box-shadow: none !important;
+	transform: none !important;
+	opacity: 0.85;
 }
 
 .qty-control-btn.plus-btn {
 	background: var(--pos-button-success-bg) !important;
 	color: var(--pos-button-success-text) !important;
-	border: 2px solid var(--pos-button-success-border) !important;
+	border: 1px solid var(--pos-button-success-border) !important;
 }
 
 .qty-control-btn.plus-btn:hover {
 	background: var(--pos-button-success-hover-bg) !important;
 	color: var(--pos-button-success-hover-text) !important;
-	box-shadow:
-		0 6px 20px var(--pos-shadow),
-		0 4px 8px var(--pos-shadow-light) !important;
-	transform: translateY(-2px) scale(1.05) !important;
+	box-shadow: none !important;
+	transform: none !important;
+	opacity: 0.85;
 }
 
-/* Delete action button styling - compact */
+/* Delete action button styling - compact & minimalist */
 .delete-action-btn {
-	min-width: 28px !important;
-	height: 28px !important;
-	border-radius: 6px !important;
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-	box-shadow:
-		0 2px 6px var(--pos-shadow),
-		0 1px 2px var(--pos-shadow-light) !important;
+	min-width: 26px !important;
+	height: 26px !important;
+	border-radius: 4px !important;
+	transition: all 0.2s ease !important;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
 	font-weight: 600 !important;
 	background: var(--pos-button-error-bg) !important;
 	color: var(--pos-button-error-text) !important;
@@ -3324,40 +3299,17 @@ body[dir="rtl"] .number-field-rtl {
 	overflow: hidden !important;
 }
 
-.delete-action-btn::before {
-	content: "";
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: var(--pos-hover-bg);
-	transition: transform 0.3s ease;
-	transform: translateX(-100%);
-	z-index: 0;
-}
-
-.delete-action-btn:hover::before {
-	transform: translateX(0);
-}
-
 .delete-action-btn:hover {
-	transform: translateY(-2px) scale(1.05);
-	box-shadow:
-		0 8px 24px var(--pos-shadow-dark),
-		0 4px 8px var(--pos-shadow) !important;
 	background: var(--pos-button-error-hover-bg) !important;
 	color: var(--pos-button-error-hover-text) !important;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+	opacity: 0.9;
 }
 
 .delete-action-btn .v-icon {
 	position: relative;
 	z-index: 1;
 	transition: all 0.2s ease;
-}
-
-.delete-action-btn:hover .v-icon {
-	animation: pulse 0.6s ease-in-out;
 }
 
 .pos-table__qty-input {
@@ -3396,19 +3348,17 @@ body[dir="rtl"] .number-field-rtl {
 	max-width: 100px;
 	width: auto;
 	height: auto;
-	background: var(--pos-surface-variant);
-	border-radius: 8px;
-	border: 1px solid var(--pos-border-light);
-	transition: all 0.3s ease;
+	background: transparent;
+	border-radius: 6px;
+	border: none;
+	transition: all 0.2s ease;
 	margin: 0 auto;
 	flex-shrink: 0;
 	box-sizing: border-box;
 }
 
 .pos-table__editor-box:hover {
-	background: var(--pos-hover-bg);
-	box-shadow: 0 4px 16px var(--pos-shadow);
-	transform: translateY(-1px);
+	background: transparent;
 }
 
 .pos-table__editor-display {
@@ -3419,13 +3369,14 @@ body[dir="rtl"] .number-field-rtl {
 	text-align: center;
 	font-weight: 600;
 	padding: 0 2px;
-	border-radius: 3px;
-	background: var(--pos-primary-container);
-	border: 1px solid var(--pos-primary-variant);
+	border-radius: 2px;
+	background: rgba(var(--pos-primary-rgb), 0.04);
+	border: none;
+	border-bottom: 1px solid rgba(var(--pos-primary-rgb), 0.2);
 	color: var(--pos-primary);
 	font-size: 0.75rem;
 	transition: all 0.2s ease;
-	box-shadow: 0 1px 2px var(--pos-shadow-light);
+	box-shadow: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -3434,6 +3385,11 @@ body[dir="rtl"] .number-field-rtl {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	cursor: pointer;
+}
+
+.pos-table__editor-display:focus {
+	border-bottom: 1.5px solid var(--pos-primary);
+	outline: none;
 }
 
 .pos-table__editor-btn {
