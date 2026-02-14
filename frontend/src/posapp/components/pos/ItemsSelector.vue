@@ -549,7 +549,7 @@
 									>
 								</template>
 								<template v-if="show_price_list_rate_column" v-slot:item.comparison_pl_rate="{ item }">
-									<span class="text-caption">
+									<span class="text-caption font-weight-bold">
 										{{
 											comparison_price_list_rates[item.item_code]
 												? currencySymbol(pos_profile.currency) + ' ' + memoizedFormatCurrency(
