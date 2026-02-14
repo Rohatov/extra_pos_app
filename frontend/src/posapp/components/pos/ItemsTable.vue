@@ -1369,7 +1369,11 @@ export default {
 
 .pos-table :deep(table) {
 	table-layout: fixed;
-	width: 100%;
+	min-width: 100%;
+}
+
+.pos-table :deep(.v-table__wrapper) {
+	overflow-x: auto;
 }
 
 .pos-table :deep(th),
@@ -2204,24 +2208,22 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 .pos-table :deep(.v-data-table),
 .pos-table :deep(.v-data-table-virtual),
 .pos-table :deep(.v-table) {
-	width: 100% !important;
-	max-width: 100% !important;
+	min-width: 100% !important;
 	margin: 0 !important;
 	padding: 0 !important;
 	border-radius: 0 !important;
 }
 
 .pos-table :deep(.v-data-table__wrapper) {
-	width: 100% !important;
-	max-width: 100% !important;
+	min-width: 100% !important;
 	margin: 0 !important;
 	padding: 0 !important;
 	border: none !important;
+	overflow-x: auto !important;
 }
 
 .pos-table :deep(table) {
-	width: 100% !important;
-	max-width: 100% !important;
+	min-width: 100% !important;
 	margin: 0 !important;
 	border-collapse: collapse !important;
 	table-layout: fixed !important;

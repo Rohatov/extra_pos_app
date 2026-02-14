@@ -2,17 +2,17 @@
  * Column Resize utility for v-data-table-virtual
  * Adds Google Sheets-like column resizing to Vuetify data tables.
  *
+ * Fixes:
+ *   - Dragging one column does NOT affect other columns (all frozen during resize)
+ *   - Column widths persist across Vuetify re-renders (MutationObserver watches thead)
+ *   - Double-click a handle to auto-reset that column
+ *
  * Usage (Vue Options API mixin):
  *   import { columnResizeMixin } from './columnResize.js';
  *   mixins: [columnResizeMixin('myTableRef', 'myStorageKey')]
- *
- * The mixin will:
- *   - Add drag handles to every <th> in the table
- *   - Persist widths to localStorage under the given key
- *   - Restore widths on mount
  */
 
-const MIN_COL_WIDTH = 40; // px
+const MIN_COL_WIDTH = 30; // px
 
 /**
  * Core class that manages resize handles for a single table element.
@@ -23,52 +23,56 @@ class TableColumnResizer {
 		this.storageKey = storageKey;
 		this.handles = [];
 		this.isResizing = false;
+		this._savedWidths = null;
+		this._observer = null;
+		this._reapplyTimer = null;
 		this._onMouseMove = this._onMouseMove.bind(this);
 		this._onMouseUp = this._onMouseUp.bind(this);
-		this._lastThCount = 0;
 	}
 
-	/** Check if handles need re-init (column count changed or handles were lost) */
-	needsReinit() {
-		const ths = this.tableEl.querySelectorAll('thead th');
-		if (ths.length !== this._lastThCount || this.handles.length === 0) return true;
-		// Also check if handles are still in the DOM (Vuetify may re-render headers)
-		if (this.handles.length > 0 && !this.handles[0].parentElement) return true;
-		return false;
+	// -------- Helpers --------
+
+	_getThs() {
+		return Array.from(this.tableEl.querySelectorAll('thead th'));
 	}
 
-	/** Attach resize handles to every <th> */
+	/** Are the resize handles still attached to the DOM? */
+	_handlesLost() {
+		return (
+			this.handles.length === 0 ||
+			(this.handles.length > 0 && !this.handles[0].parentElement)
+		);
+	}
+
+	// -------- Init / Destroy --------
+
 	init() {
-		this.destroy(); // clean up previous handles
-		const ths = this.tableEl.querySelectorAll('thead th');
+		this.destroy();
+		const ths = this._getThs();
 		if (!ths.length) return;
-		this._lastThCount = ths.length;
 
-		// Restore saved widths
-		const saved = this._loadWidths();
+		// Load saved widths from localStorage
+		this._savedWidths = this._loadWidths();
 
-		ths.forEach((th, idx) => {
-			// Apply saved width
-			if (saved && saved[idx] != null) {
-				th.style.width = saved[idx] + 'px';
-				th.style.minWidth = saved[idx] + 'px';
-			}
+		// Apply saved widths and lock every column
+		this._applyAndLockWidths(ths);
 
-			// Create handle element
-			const handle = document.createElement('div');
-			handle.className = 'col-resize-handle';
-			handle.addEventListener('mousedown', (e) => this._onMouseDown(e, th, idx));
-			handle.addEventListener('touchstart', (e) => this._onTouchStart(e, th, idx), { passive: false });
-			handle.addEventListener('dblclick', (e) => this._onDoubleClick(e, th, idx));
-			th.style.position = 'relative';
-			th.appendChild(handle);
-			this.handles.push(handle);
-		});
+		// Attach drag handles
+		this._attachHandles(ths);
+
+		// Watch for Vuetify re-rendering the headers (replaces <th> elements)
+		this._startObserving();
 	}
 
-	/** Remove all handles and listeners */
 	destroy() {
-		this.handles.forEach((h) => h.remove());
+		if (this._observer) {
+			this._observer.disconnect();
+			this._observer = null;
+		}
+		clearTimeout(this._reapplyTimer);
+		this.handles.forEach((h) => {
+			try { h.remove(); } catch (_) { /* ignore */ }
+		});
 		this.handles = [];
 		document.removeEventListener('mousemove', this._onMouseMove);
 		document.removeEventListener('mouseup', this._onMouseUp);
@@ -76,7 +80,111 @@ class TableColumnResizer {
 		document.removeEventListener('touchend', this._onMouseUp);
 	}
 
-	// -------- Mouse events --------
+	// -------- Width management --------
+
+	/**
+	 * Apply saved widths (or current widths) and lock each column with
+	 * width + minWidth + maxWidth so the browser cannot redistribute.
+	 */
+	_applyAndLockWidths(ths) {
+		ths = ths || this._getThs();
+		if (!ths.length) return;
+
+		const saved = this._savedWidths;
+		const colCount = ths.length;
+
+		// Collect target widths: saved value or current rendered width
+		const widths = ths.map((th, idx) => {
+			if (saved && idx < saved.length && saved[idx] != null && saved[idx] > 0) {
+				return saved[idx];
+			}
+			return th.offsetWidth || MIN_COL_WIDTH;
+		});
+
+		// Lock each column
+		ths.forEach((th, idx) => {
+			const w = widths[idx];
+			th.style.width = w + 'px';
+			th.style.minWidth = w + 'px';
+			th.style.maxWidth = w + 'px';
+		});
+
+		// Match corresponding <td> widths via <col> elements or inline styles
+		this._syncTdWidths(widths);
+
+		// Set table width = sum of columns so no redistribution happens
+		const totalWidth = widths.reduce((a, b) => a + b, 0);
+		const containerWidth = this.tableEl.parentElement?.offsetWidth || 0;
+		const tableWidth = Math.max(totalWidth, containerWidth);
+		this.tableEl.style.setProperty('width', tableWidth + 'px', 'important');
+		this.tableEl.style.setProperty('max-width', 'none', 'important');
+	}
+
+	/** Sync td widths using a <colgroup> for consistent column sizing */
+	_syncTdWidths(widths) {
+		// Remove any existing colgroup we created
+		const existing = this.tableEl.querySelector('colgroup.pos-resize-colgroup');
+		if (existing) existing.remove();
+
+		const colgroup = document.createElement('colgroup');
+		colgroup.className = 'pos-resize-colgroup';
+		widths.forEach((w) => {
+			const col = document.createElement('col');
+			col.style.width = w + 'px';
+			col.style.minWidth = w + 'px';
+			col.style.maxWidth = w + 'px';
+			colgroup.appendChild(col);
+		});
+		this.tableEl.prepend(colgroup);
+	}
+
+	// -------- Handles --------
+
+	_attachHandles(ths) {
+		ths.forEach((th, idx) => {
+			const handle = document.createElement('div');
+			handle.className = 'col-resize-handle';
+			handle.addEventListener('mousedown', (e) => this._onMouseDown(e, th, idx));
+			handle.addEventListener('touchstart', (e) => this._onTouchStart(e, th, idx), {
+				passive: false,
+			});
+			handle.addEventListener('dblclick', (e) => this._onDoubleClick(e, th, idx));
+			th.style.position = 'relative';
+			th.appendChild(handle);
+			this.handles.push(handle);
+		});
+	}
+
+	// -------- MutationObserver --------
+
+	_startObserving() {
+		const thead = this.tableEl.querySelector('thead');
+		if (!thead) return;
+
+		this._observer = new MutationObserver(() => {
+			if (this.isResizing) return; // never interfere during active drag
+			clearTimeout(this._reapplyTimer);
+			this._reapplyTimer = setTimeout(() => this._onHeaderMutated(), 30);
+		});
+
+		this._observer.observe(thead, { childList: true, subtree: true });
+	}
+
+	/** Called when Vuetify replaces <th> elements (e.g. after clicking an item) */
+	_onHeaderMutated() {
+		if (!this._handlesLost()) return; // handles still present, nothing to do
+		const ths = this._getThs();
+		if (!ths.length) return;
+
+		// Clean up stale handle references
+		this.handles = [];
+
+		// Re-apply saved widths and re-attach handles
+		this._applyAndLockWidths(ths);
+		this._attachHandles(ths);
+	}
+
+	// -------- Mouse / Touch events --------
 
 	_onMouseDown(e, th, idx) {
 		e.preventDefault();
@@ -101,9 +209,23 @@ class TableColumnResizer {
 		this._startWidth = th.offsetWidth;
 		this._currentTh = th;
 		this._currentIdx = idx;
+
+		// Freeze ALL columns at current rendered widths
+		const ths = this._getThs();
+		this._frozenWidths = ths.map((t) => t.offsetWidth);
+		ths.forEach((t, i) => {
+			const w = this._frozenWidths[i];
+			t.style.width = w + 'px';
+			t.style.minWidth = w + 'px';
+			t.style.maxWidth = w + 'px';
+		});
+
+		// Pin table width = exact sum of frozen columns
+		const totalWidth = this._frozenWidths.reduce((a, b) => a + b, 0);
+		this.tableEl.style.setProperty('width', totalWidth + 'px', 'important');
+
 		document.body.style.cursor = 'col-resize';
 		document.body.style.userSelect = 'none';
-		// Add visual feedback
 		th.classList.add('col-resizing');
 	}
 
@@ -113,8 +235,27 @@ class TableColumnResizer {
 		const pageX = e.pageX ?? e.touches?.[0]?.pageX ?? 0;
 		const diff = pageX - this._startX;
 		const newWidth = Math.max(MIN_COL_WIDTH, this._startWidth + diff);
+
+		// Only change the target column
 		this._currentTh.style.width = newWidth + 'px';
 		this._currentTh.style.minWidth = newWidth + 'px';
+		this._currentTh.style.maxWidth = newWidth + 'px';
+
+		// Update <col> element for this column too
+		const colgroup = this.tableEl.querySelector('colgroup.pos-resize-colgroup');
+		if (colgroup) {
+			const col = colgroup.children[this._currentIdx];
+			if (col) {
+				col.style.width = newWidth + 'px';
+				col.style.minWidth = newWidth + 'px';
+				col.style.maxWidth = newWidth + 'px';
+			}
+		}
+
+		// Update table width = frozen total ± delta
+		const widthDelta = newWidth - this._frozenWidths[this._currentIdx];
+		const frozenTotal = this._frozenWidths.reduce((a, b) => a + b, 0);
+		this.tableEl.style.setProperty('width', (frozenTotal + widthDelta) + 'px', 'important');
 	}
 
 	_onMouseUp() {
@@ -130,14 +271,29 @@ class TableColumnResizer {
 		document.removeEventListener('touchmove', this._onMouseMove);
 		document.removeEventListener('touchend', this._onMouseUp);
 		this._saveWidths();
+
+		// Re-sync colgroup and td widths after save
+		if (this._savedWidths) {
+			this._syncTdWidths(this._savedWidths);
+		}
 	}
 
 	_onDoubleClick(e, th, idx) {
-		// Double-click auto-fits column (reset to auto)
 		e.preventDefault();
 		e.stopPropagation();
+		// Reset this column to auto width
 		th.style.width = '';
 		th.style.minWidth = '';
+		th.style.maxWidth = '';
+
+		// Remove colgroup lock for this column
+		const colgroup = this.tableEl.querySelector('colgroup.pos-resize-colgroup');
+		if (colgroup && colgroup.children[idx]) {
+			colgroup.children[idx].style.width = '';
+			colgroup.children[idx].style.minWidth = '';
+			colgroup.children[idx].style.maxWidth = '';
+		}
+
 		this._saveWidths();
 	}
 
@@ -145,11 +301,12 @@ class TableColumnResizer {
 
 	_saveWidths() {
 		if (!this.storageKey) return;
-		const ths = this.tableEl.querySelectorAll('thead th');
-		const widths = Array.from(ths).map((th) => th.offsetWidth);
+		const ths = this._getThs();
+		const widths = ths.map((th) => th.offsetWidth);
+		this._savedWidths = widths;
 		try {
 			localStorage.setItem(this.storageKey, JSON.stringify(widths));
-		} catch (e) {
+		} catch (_) {
 			// ignore quota errors
 		}
 	}
@@ -159,21 +316,18 @@ class TableColumnResizer {
 		try {
 			const raw = localStorage.getItem(this.storageKey);
 			return raw ? JSON.parse(raw) : null;
-		} catch (e) {
+		} catch (_) {
 			return null;
 		}
 	}
 }
 
 /**
- * Returns a Vue Options-API mixin that wires up column resizing for the
- * `v-data-table-virtual` reachable via the given ref name.
+ * Returns a Vue Options-API mixin that wires up column resizing.
  *
- * @param {string} tableRefName   – the ref="..." name on the component / wrapper
+ * @param {string} tableRefName   – the ref="..." name on the table component
  * @param {string} storageKey     – localStorage key for persisting widths
- * @param {Function} [getTableEl] – optional function(component) returning the
- *                                   raw <table> DOM element; default walks the
- *                                   ref's $el.
+ * @param {Function} [getTableEl] – optional fn(vm) returning raw <table> element
  */
 export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 	let resizer = null;
@@ -186,13 +340,12 @@ export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 		return el.querySelector('table') || el;
 	};
 
-	const setup = (vm, force) => {
+	const setup = (vm) => {
 		const tableEl = findTable(vm);
 		if (!tableEl) return;
-		// Only init if table has rendered headers
 		if (!tableEl.querySelector('thead th')) return;
-		// Skip re-init if column count hasn't changed (unless forced)
-		if (!force && resizer && !resizer.needsReinit()) return;
+		// If resizer already exists and handles are fine, do nothing
+		if (resizer && !resizer._handlesLost()) return;
 		if (resizer) resizer.destroy();
 		resizer = new TableColumnResizer(tableEl, storageKey);
 		resizer.init();
@@ -200,11 +353,16 @@ export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 
 	return {
 		mounted() {
-			this.$nextTick(() => setup(this, true));
+			this.$nextTick(() => setup(this));
 		},
 		updated() {
-			// Only re-attach if column count changed (e.g. column visibility toggle)
-			this.$nextTick(() => setup(this, false));
+			// MutationObserver handles most re-renders, but as a safety net
+			// we also check in updated() for cases where the table element
+			// itself was replaced (e.g. v-if toggle).
+			this.$nextTick(() => {
+				if (resizer && !resizer._handlesLost()) return;
+				setup(this);
+			});
 		},
 		beforeUnmount() {
 			if (resizer) {
@@ -216,8 +374,7 @@ export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 }
 
 /**
- * CSS that should be injected once (or included in a global stylesheet).
- * We inject it programmatically so consumers don't need a separate import.
+ * CSS injected once for resize handles.
  */
 const STYLE_ID = 'pos-col-resize-styles';
 

@@ -5729,7 +5729,11 @@ export default {
 
 .sleek-data-table :deep(table) {
 	table-layout: fixed;
-	width: 100%;
+	min-width: 100%;
+}
+
+.sleek-data-table :deep(.v-table__wrapper) {
+	overflow-x: auto;
 }
 
 .sleek-data-table :deep(th),
