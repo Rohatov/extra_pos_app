@@ -239,6 +239,26 @@
 												class="mb-2 pos-themed-input"
 											>
 											</v-text-field>
+											<v-divider class="my-3"></v-divider>
+											<v-switch
+												v-model="temp_show_price_list_rate_column"
+												:label="__('Show Price List Rate column')"
+												hide-details
+												density="compact"
+												color="primary"
+												class="mb-2"
+											></v-switch>
+											<v-select
+												v-if="temp_show_price_list_rate_column"
+												v-model="temp_selected_comparison_price_list"
+												:items="available_price_lists"
+												:label="__('Select Price List')"
+												density="compact"
+												variant="outlined"
+												color="primary"
+												hide-details
+												class="mb-2 pos-themed-input"
+											></v-select>
 										</v-card-text>
 										<v-card-actions class="pa-4 pt-0">
 											<v-btn color="error" variant="text" @click="cancelItemSettings"
@@ -335,7 +355,6 @@
 										<div class="card-item-content">
 											<div class="card-item-header">
 												<h4 class="card-item-name">{{ item.item_name }}</h4>
-												<span class="card-item-code">{{ item.item_code }}</span>
 											</div>
 											<div class="card-item-details">
 												<div class="card-item-price">
@@ -416,7 +435,7 @@
 													</div>
 												</div>
 												<div class="card-item-stock">
-													<v-icon size="small" class="stock-icon">
+													<v-icon size="x-small" class="stock-icon">
 														mdi-package-variant
 													</v-icon>
 													<span
@@ -529,6 +548,19 @@
 										}}</span
 									>
 								</template>
+								<template v-if="show_price_list_rate_column" v-slot:item.comparison_pl_rate="{ item }">
+									<span class="text-caption">
+										{{
+											comparison_price_list_rates[item.item_code]
+												? currencySymbol(pos_profile.currency) + ' ' + memoizedFormatCurrency(
+													comparison_price_list_rates[item.item_code],
+													pos_profile.currency,
+													ratePrecision(comparison_price_list_rates[item.item_code]),
+												)
+												: '—'
+										}}
+									</span>
+								</template>
 							</v-data-table-virtual>
 						</div>
 					</v-col>
@@ -546,17 +578,6 @@
 						hide-details
 						v-model="item_group"
 					></v-select>
-				</v-col>
-				<v-col cols="12" class="mb-2" v-if="pos_profile.posa_enable_price_list_dropdown !== false">
-					<v-text-field
-						density="compact"
-						variant="solo"
-						color="primary"
-						:label="frappe._('Price List')"
-						hide-details
-						:model-value="active_price_list"
-						readonly
-					></v-text-field>
 				</v-col>
 				<v-col cols="3" class="dynamic-margin-xs">
 					<v-btn-toggle
@@ -658,9 +679,10 @@ import placeholderImage from "./placeholder-image.png";
 import Skeleton from "../ui/Skeleton.vue";
 import { useCustomersStore } from "../../stores/customersStore.js";
 import { storeToRefs } from "pinia";
+import { columnResizeMixin } from "./columnResize.js";
 
 export default {
-	mixins: [format],
+	mixins: [format, columnResizeMixin('itemsTable', 'posawesome_items_col_widths')],
 	setup() {
 		const responsive = useResponsive();
 		const rtl = useRtl();
@@ -747,6 +769,12 @@ export default {
 		items_per_page: 50,
 		temp_items_per_page: 50,
 		temp_force_server_items: false,
+		show_price_list_rate_column: false,
+		temp_show_price_list_rate_column: false,
+		selected_comparison_price_list: "",
+		temp_selected_comparison_price_list: "",
+		comparison_price_list_rates: {},
+		comparison_price_list_loading: false,
 		virtualScrollEnabled: true,
 		virtualScrollBuffer: 200,
 		renderBuffer: 10,
@@ -1021,6 +1049,9 @@ export default {
 			if (val) {
 				this.eventBus.emit("itemsLoaded");
 				this.eventBus.emit("data-loaded", "items");
+				if (this.show_price_list_rate_column && this.selected_comparison_price_list) {
+					this.fetchComparisonPriceListRates();
+				}
 			}
 		},
 		items_view() {
@@ -1824,6 +1855,36 @@ export default {
 				this.selected_price_list_local = this.active_price_list || this.pos_profile.selling_price_list;
 			}
 		},
+		async fetchComparisonPriceListRates() {
+			const pl = this.selected_comparison_price_list;
+			if (!pl || !this.items || !this.items.length) return;
+			this.comparison_price_list_loading = true;
+			try {
+				const itemCodes = this.items.map((it) => ({ item_code: it.item_code }));
+				const r = await frappe.call({
+					method: "posawesome.posawesome.api.items.get_items_details",
+					args: {
+						pos_profile: this.pos_profile.name,
+						items_data: JSON.stringify(itemCodes),
+						price_list: pl,
+						customer: this.customer || undefined,
+						strict_price_list: 1,
+					},
+				});
+				if (r && r.message) {
+					const rates = {};
+					r.message.forEach((det) => {
+						if (det.item_code) {
+							rates[det.item_code] = det.price_list_rate ?? det.rate ?? 0;
+						}
+					});
+					this.comparison_price_list_rates = rates;
+				}
+			} catch (error) {
+				console.error("Failed to fetch comparison price list rates:", error);
+			}
+			this.comparison_price_list_loading = false;
+		},
 		onPriceListChanged(newPriceList) {
 			if (!newPriceList) return;
 			console.log("[ItemsSelector] Price List changed to:", newPriceList);
@@ -2067,21 +2128,29 @@ export default {
 				{
 					title: __("Name"),
 					align: "start",
-					sortable: true,
+					sortable: false,
 					key: "item_name",
 				},
 				{
 					title: __("Code"),
 					align: "start",
-					sortable: true,
+					sortable: false,
 					key: "item_code",
 				},
-				{ title: __("Available QTY"), key: "actual_qty", align: "start" },
-				{ title: __("Rate"), key: "rate", align: "start" },
-				{ title: __("UOM"), key: "stock_uom", align: "start" },
+				{ title: __("QTY"), key: "actual_qty", align: "start", sortable: false },
+				{ title: __("Rate"), key: "rate", align: "start", sortable: false },
+				{ title: __("UOM"), key: "stock_uom", align: "start", sortable: false },
 			];
 			if (!this.pos_profile.posa_display_item_code) {
 				items_headers.splice(1, 1);
+			}
+			if (this.show_price_list_rate_column) {
+				items_headers.push({
+					title: this.selected_comparison_price_list || __("PL Rate"),
+					key: "comparison_pl_rate",
+					align: "start",
+					sortable: false,
+				});
 			}
 
 			return items_headers;
@@ -4298,6 +4367,8 @@ export default {
 			this.temp_show_last_invoice_rate = this.show_last_invoice_rate;
 			this.temp_enable_background_sync = this.enable_background_sync;
 			this.temp_background_sync_interval = this.background_sync_interval;
+			this.temp_show_price_list_rate_column = this.show_price_list_rate_column;
+			this.temp_selected_comparison_price_list = this.selected_comparison_price_list || this.active_price_list;
 			this.show_item_settings = true;
 		},
 		cancelItemSettings() {
@@ -4325,6 +4396,13 @@ export default {
 				this.lastInvoiceRates = {};
 			} else {
 				this.scheduleLastInvoiceRateRefresh();
+			}
+			// Apply price list rate column settings
+			const plChanged = this.selected_comparison_price_list !== this.temp_selected_comparison_price_list;
+			this.show_price_list_rate_column = this.temp_show_price_list_rate_column;
+			this.selected_comparison_price_list = this.temp_selected_comparison_price_list;
+			if (this.show_price_list_rate_column && (plChanged || Object.keys(this.comparison_price_list_rates).length === 0)) {
+				this.fetchComparisonPriceListRates();
 			}
 			this.saveItemSettings();
 			this.startBackgroundSyncScheduler();
@@ -4365,6 +4443,8 @@ export default {
 					background_sync_interval: this.background_sync_interval,
 					enable_custom_items_per_page: this.enable_custom_items_per_page,
 					items_per_page: this.items_per_page,
+					show_price_list_rate_column: this.show_price_list_rate_column,
+					selected_comparison_price_list: this.selected_comparison_price_list,
 				};
 				localStorage.setItem("posawesome_item_selector_settings", JSON.stringify(settings));
 			} catch (e) {
@@ -4408,6 +4488,12 @@ export default {
 					if (typeof opts.items_per_page === "number") {
 						this.items_per_page = opts.items_per_page;
 						this.itemsPerPage = this.items_per_page;
+					}
+					if (typeof opts.show_price_list_rate_column === "boolean") {
+						this.show_price_list_rate_column = opts.show_price_list_rate_column;
+					}
+					if (typeof opts.selected_comparison_price_list === "string" && opts.selected_comparison_price_list) {
+						this.selected_comparison_price_list = opts.selected_comparison_price_list;
 					}
 				}
 			} catch (e) {
@@ -4634,12 +4720,12 @@ export default {
 		},
 		cardRowHeight() {
 			if (this.windowWidth <= 768) {
-				return 260;
+				return 155;
 			}
 			if (this.windowWidth <= 1200) {
-				return 280;
+				return 165;
 			}
-			return 300;
+			return 175;
 		},
 		cardSlotHeight() {
 			return this.cardRowHeight + this.cardGap;
@@ -5386,7 +5472,7 @@ export default {
 
 .card-item-image-container {
 	position: relative;
-	height: 120px;
+	height: 80px;
 	overflow: hidden;
 	background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
@@ -5413,17 +5499,17 @@ export default {
 }
 
 .card-item-content {
-	padding: 12px 16px 16px;
+	padding: 4px 8px 4px;
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 2px;
 }
 
 .card-item-header {
 	border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-	padding-bottom: 8px;
-	margin-bottom: 4px;
+	padding-bottom: 4px;
+	margin-bottom: 2px;
 }
 
 .card-item-name {
@@ -5460,14 +5546,13 @@ export default {
 .card-item-details {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	flex: 1;
+	gap: 2px;
 }
 
 .card-item-price {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: 2px;
 }
 
 .primary-price {
@@ -5478,6 +5563,11 @@ export default {
 	color: var(--primary-color, #1976d2);
 }
 
+:deep([data-theme="dark"]) .primary-price,
+:deep(.v-theme--dark) .primary-price {
+	color: #64b5f6;
+}
+
 .secondary-price {
 	display: flex;
 	align-items: center;
@@ -5485,6 +5575,11 @@ export default {
 	font-weight: 500;
 	color: #4caf50;
 	font-size: 0.875rem;
+}
+
+:deep([data-theme="dark"]) .secondary-price,
+:deep(.v-theme--dark) .secondary-price {
+	color: #81c784;
 }
 
 .last-rate-chip {
@@ -5547,19 +5642,22 @@ export default {
 .card-item-stock {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 6px 8px;
+	gap: 3px;
+	padding: 2px 6px;
 	background: rgba(0, 0, 0, 0.02);
-	border-radius: 6px;
-	margin-top: auto;
+	border-radius: 4px;
+	margin-top: 2px;
+	line-height: 1;
 }
 
 .stock-icon {
 	color: var(--pos-text-secondary, #6c757d);
+	font-size: 12px !important;
 }
 
 .stock-amount {
 	font-weight: 600;
+	font-size: 0.7rem;
 	font-family:
 		"SF Pro Display", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans Arabic", "Tahoma",
 		sans-serif;
@@ -5573,7 +5671,7 @@ export default {
 }
 
 .stock-uom {
-	font-size: 0.75rem;
+	font-size: 0.65rem;
 	color: var(--pos-text-secondary, #6c757d);
 	font-weight: 500;
 }
@@ -5627,6 +5725,18 @@ export default {
 	display: flex;
 	flex-direction: column;
 	transition: all 0.3s ease;
+}
+
+.sleek-data-table :deep(table) {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.sleek-data-table :deep(th),
+.sleek-data-table :deep(td) {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .sleek-data-table:hover {

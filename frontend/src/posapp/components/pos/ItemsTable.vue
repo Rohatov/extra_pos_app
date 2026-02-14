@@ -13,7 +13,6 @@
 			:headers="responsiveHeaders"
 			:items="items"
 			:expanded="expanded"
-			show-expand
 			item-value="posa_row_id"
 			class="pos-table elevation-2 pos-themed-card"
 			:class="tableClasses"
@@ -560,8 +559,10 @@ import { logComponentRender } from "../../utils/perf.js";
 import { useInvoiceStore } from "../../stores/invoiceStore.js";
 import { parseBooleanSetting } from "../../utils/stock.js";
 import CartItemRow from "./CartItemRow.vue";
+import { columnResizeMixin } from "./columnResize.js";
 export default {
 	name: "ItemsTable",
+	mixins: [columnResizeMixin('tableContainer', 'posawesome_cart_col_widths')],
 	components: {
 		CartItemRow,
 	},
@@ -745,8 +746,6 @@ export default {
 				})
 				.map((header) => ({
 					...header,
-					width: this.calculateColumnWidth(header),
-					minWidth: this.calculateMinColumnWidth(header),
 				}));
 		},
 
@@ -1368,6 +1367,18 @@ export default {
 	padding: 0;
 }
 
+.pos-table :deep(table) {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.pos-table :deep(th),
+.pos-table :deep(td) {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* Ensure items table can scroll when many rows exist */
 .items-table-container {
 	overflow-y: auto;
@@ -1437,6 +1448,15 @@ export default {
 	will-change: background-color, transform;
 }
 
+/* Item name header left-aligned */
+.pos-table :deep(th.text-start) {
+	text-align: left !important;
+}
+
+.pos-table :deep(th.text-start .v-data-table-header__content) {
+	justify-content: flex-start !important;
+}
+
 .pos-table :deep(th:hover) {
 	/* Smooth background transition without layout changes */
 	background-color: var(--pos-hover-bg);
@@ -1490,6 +1510,15 @@ export default {
 	text-align: center;
 	color: var(--pos-text-primary);
 	position: relative;
+}
+
+/* Item name column left-aligned */
+.pos-table :deep(td[data-column-key="item_name"]) {
+	text-align: left !important;
+}
+
+.pos-table :deep(td[data-column-key="item_name"]) > div {
+	justify-content: flex-start !important;
 }
 
 /* Ensure all cell contents fill the cell */
@@ -2195,7 +2224,7 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 	max-width: 100% !important;
 	margin: 0 !important;
 	border-collapse: collapse !important;
-	table-layout: auto !important;
+	table-layout: fixed !important;
 }
 
 .pos-table :deep(thead),

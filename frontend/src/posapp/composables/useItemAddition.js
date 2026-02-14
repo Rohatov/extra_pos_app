@@ -912,7 +912,7 @@ export function useItemAddition() {
 		if (context.update_price_list) context.update_price_list();
 
 		// Always reset to default customer after invoice
-		context.customer = context.pos_profile.customer;
+		context.customer = context.pos_profile.customer || 'Guest Customer';
 
 		context.eventBus.emit("set_customer_readonly", false);
 		context.invoiceType = context.pos_profile.posa_default_sales_order ? "Order" : "Invoice";

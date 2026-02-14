@@ -573,21 +573,14 @@ export default {
 		initializeItemsHeaders() {
 			// Define all available columns
 			this.available_columns = [
-				{ title: __("Name"), align: "start", sortable: true, key: "item_name", required: true },
-				{ title: __("QTY"), key: "qty", align: "center", required: true },
-				{ title: __("UOM"), key: "uom", align: "center", required: false },
-				{
-					title: __("Price List Rate"),
-					key: "price_list_rate",
-					align: "end",
-					required: false,
-					width: "120px",
-				},
-				{ title: __("Discount %"), key: "discount_value", align: "end", required: false },
-				{ title: __("Discount Amount"), key: "discount_amount", align: "end", required: false },
-				{ title: __("Rate"), key: "rate", align: "center", required: true },
-				{ title: __("Amount"), key: "amount", align: "center", required: true },
-				{ title: __("Offer?"), key: "posa_is_offer", align: "center", required: false },
+				{ title: __("Name"), align: "start", sortable: false, key: "item_name", required: true },
+				{ title: __("QTY"), key: "qty", align: "center", sortable: false, required: true },
+				{ title: __("UOM"), key: "uom", align: "center", sortable: false, required: false },
+				{ title: __("Discount %"), key: "discount_value", align: "end", sortable: false, required: false },
+				{ title: __("Discount Amount"), key: "discount_amount", align: "end", sortable: false, required: false },
+				{ title: __("Rate"), key: "rate", align: "center", sortable: false, required: true },
+				{ title: __("Amount"), key: "amount", align: "center", sortable: false, required: true },
+				{ title: __("Offer?"), key: "posa_is_offer", align: "center", sortable: false, required: false },
 				{ title: __("Actions"), key: "actions", align: "center", required: true, sortable: false },
 			];
 
@@ -597,7 +590,6 @@ export default {
 				this.selected_columns = this.available_columns
 					.filter((col) => {
 						if (col.required) return true;
-						if (col.key === "price_list_rate") return true;
 						if (col.key === "discount_value" && this.pos_profile.posa_display_discount_percentage)
 							return true;
 						if (col.key === "discount_amount" && this.pos_profile.posa_display_discount_amount)
@@ -798,7 +790,10 @@ export default {
 			try {
 				const saved = localStorage.getItem("posawesome_selected_columns");
 				if (saved) {
-					this.selected_columns = JSON.parse(saved);
+					const parsed = JSON.parse(saved);
+					// Filter out removed columns (e.g. price_list_rate)
+					const validKeys = this.available_columns.map((c) => c.key);
+					this.selected_columns = parsed.filter((k) => validKeys.includes(k));
 				}
 			} catch (e) {
 				console.error("Failed to load column preferences:", e);
@@ -1497,7 +1492,7 @@ export default {
 		handleRegisterPosProfile(data) {
 			this.pos_profile = data.pos_profile;
 			this.company = data.company || null;
-			this.customer = data.pos_profile.customer;
+			this.customer = data.pos_profile.customer || 'Guest Customer';
 			this.pos_opening_shift = data.pos_opening_shift;
 			this.stock_settings = data.stock_settings;
 			const prec = parseInt(data.pos_profile.posa_decimal_precision);
@@ -1682,8 +1677,8 @@ export default {
 					if (this.customer !== newCustomer) {
 						this.customer = newCustomer;
 					}
-				} else if (this.customer) {
-					this.customer = "";
+				} else {
+					this.customer = this.pos_profile?.customer || 'Guest Customer';
 				}
 			},
 			{ immediate: true },

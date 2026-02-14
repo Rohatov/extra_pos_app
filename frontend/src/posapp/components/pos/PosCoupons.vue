@@ -162,7 +162,7 @@ export default {
 			});
 		},
 		setActiveGiftCoupons() {
-			if (!this.customer) return;
+			if (!this.customer || !this.pos_profile?.company) return;
 			const vm = this;
 			frappe.call({
 				method: "posawesome.posawesome.api.offers.get_active_gift_coupons",

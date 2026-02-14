@@ -2,22 +2,6 @@
 	<div class="customer-drafts-container">
 		<!-- Row 1: Customer Search and Customer Group side by side -->
 		<div class="customer-selection-row">
-			<!-- Guest Button -->
-			<div class="guest-button-section" style="margin-right: 8px;">
-				<v-btn
-					color="primary"
-					density="comfortable"
-					variant="tonal"
-					class="guest-btn"
-					@click="setGuestCustomer"
-					:disabled="effectiveReadonly || loadingCustomers"
-					prepend-icon="mdi-account"
-					style="height: 44px; min-width: 110px;"
-				>
-					{{ __('Guest') }}
-				</v-btn>
-			</div>
-
 			<!-- Customer Search -->
 			<div class="customer-search-section">
 				<Skeleton v-if="loadingCustomers" height="44" class="w-100" />
@@ -146,19 +130,6 @@
 	align-items: flex-start;
 	width: 100%;
 	overflow: visible;
-}
-
-.guest-button-section {
-	flex: 0 0 auto;
-	display: flex;
-	align-items: center;
-}
-
-.guest-btn {
-	height: 44px;
-	min-width: 110px;
-	font-weight: 600;
-	text-transform: none;
 }
 
 .customer-search-section {
@@ -720,7 +691,6 @@ export default {
 			handleEnter,
 			new_customer,
 			edit_customer,
-			setGuestCustomer,
 			loadDraft,
 			formatDate,
 			selectFirstCustomer,

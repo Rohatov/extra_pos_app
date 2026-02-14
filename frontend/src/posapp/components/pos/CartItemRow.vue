@@ -795,7 +795,7 @@ export default {
 
 .pos-table__editor-display {
 	min-width: 45px;
-	max-width: 80px;
+	max-width: 160px;
 	width: auto;
 	flex: 1 1 auto;
 	text-align: center;
@@ -813,8 +813,6 @@ export default {
 	align-items: center;
 	justify-content: center;
 	height: 22px;
-	overflow: hidden;
-	text-overflow: ellipsis;
 	white-space: nowrap;
 	cursor: pointer;
 }
@@ -837,7 +835,7 @@ export default {
 	border-radius: 4px !important;
 }
 .pos-table__editor-input {
-	max-width: 80px;
+	max-width: 140px;
 }
 .pos-table__editor-input :deep(.v-input__control) {
 	height: 22px;

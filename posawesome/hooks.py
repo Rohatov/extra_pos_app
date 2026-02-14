@@ -267,6 +267,7 @@ fixtures = [
                     "POS Profile-posa_display_item_code",
                     "POS Profile-posa_allow_zero_rated_items",
                     "POS Profile-posa_allow_print_draft_invoices",
+                    "POS Profile-posa_allow_apply_offers",
                     "Address-posa_delivery_charges",
                     "Sales Invoice-posa_delivery_charges",
                     "Sales Invoice-posa_delivery_charges_rate",
