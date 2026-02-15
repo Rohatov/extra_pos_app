@@ -5664,7 +5664,7 @@ export default {
 }
 
 .sleek-data-table :deep(table) {
-	table-layout: fixed;
+	table-layout: auto;
 	min-width: 100%;
 }
 
@@ -5679,6 +5679,10 @@ export default {
 	white-space: nowrap;
 }
 
+.sleek-data-table :deep(th .v-data-table-header__content) {
+	justify-content: center;
+}
+
 .sleek-data-table:hover {
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
@@ -5690,6 +5694,7 @@ export default {
 	text-transform: uppercase;
 	letter-spacing: 1px;
 	padding: 16px 20px;
+	text-align: center !important;
 	transition: all 0.3s ease;
 	border-bottom: 3px solid #1976d2;
 	background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 50%, #dee2e6 100%);

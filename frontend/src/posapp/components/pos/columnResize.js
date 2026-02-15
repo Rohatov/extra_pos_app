@@ -54,8 +54,19 @@ class TableColumnResizer {
 		// Load saved widths from localStorage
 		this._savedWidths = this._loadWidths();
 
-		// Apply saved widths and lock every column
-		this._applyAndLockWidths(ths);
+		// Validate saved widths: must match column count
+		if (this._savedWidths && this._savedWidths.length !== ths.length) {
+			this._savedWidths = null;
+			try { localStorage.removeItem(this.storageKey); } catch (_) {}
+		}
+
+		if (this._savedWidths) {
+			// Saved widths exist — apply them directly
+			this._applyAndLockWidths(ths);
+		} else {
+			// No saved widths — auto-fit to content first, then lock
+			this._autoFitThenLock(ths);
+		}
 
 		// Attach drag handles
 		this._attachHandles(ths);
@@ -83,12 +94,47 @@ class TableColumnResizer {
 	// -------- Width management --------
 
 	/**
+	 * Auto-fit columns to content, then lock the resulting widths.
+	 * Temporarily uses table-layout:auto so the browser sizes to content,
+	 * reads the rendered widths, then switches to fixed and locks them.
+	 */
+	_autoFitThenLock(ths) {
+		// Remove any prior colgroup / inline styles so browser can auto-size
+		const existing = this.tableEl.querySelector('colgroup.pos-resize-colgroup');
+		if (existing) existing.remove();
+		ths.forEach((th) => {
+			th.style.width = '';
+			th.style.minWidth = '';
+			th.style.maxWidth = '';
+		});
+
+		// Let the browser auto-size based on content
+		this.tableEl.style.setProperty('table-layout', 'auto', 'important');
+		this.tableEl.style.setProperty('width', 'auto', 'important');
+		this.tableEl.style.setProperty('max-width', 'none', 'important');
+
+		// Force a reflow so the browser calculates auto widths
+		void this.tableEl.offsetWidth;
+
+		// Read the auto-calculated widths
+		const autoWidths = ths.map((th) => Math.max(th.offsetWidth, MIN_COL_WIDTH));
+
+		// Now switch to fixed layout and lock
+		this.tableEl.style.setProperty('table-layout', 'fixed', 'important');
+		this._savedWidths = autoWidths;
+		this._applyAndLockWidths(ths);
+	}
+
+	/**
 	 * Apply saved widths (or current widths) and lock each column with
 	 * width + minWidth + maxWidth so the browser cannot redistribute.
 	 */
 	_applyAndLockWidths(ths) {
 		ths = ths || this._getThs();
 		if (!ths.length) return;
+
+		// Must be fixed layout for explicit widths to work
+		this.tableEl.style.setProperty('table-layout', 'fixed', 'important');
 
 		const saved = this._savedWidths;
 		const colCount = ths.length;
@@ -180,7 +226,11 @@ class TableColumnResizer {
 		this.handles = [];
 
 		// Re-apply saved widths and re-attach handles
-		this._applyAndLockWidths(ths);
+		if (this._savedWidths && this._savedWidths.length === ths.length) {
+			this._applyAndLockWidths(ths);
+		} else {
+			this._autoFitThenLock(ths);
+		}
 		this._attachHandles(ths);
 	}
 
@@ -209,6 +259,9 @@ class TableColumnResizer {
 		this._startWidth = th.offsetWidth;
 		this._currentTh = th;
 		this._currentIdx = idx;
+
+		// Ensure fixed layout so explicit widths are honoured
+		this.tableEl.style.setProperty('table-layout', 'fixed', 'important');
 
 		// Freeze ALL columns at current rendered widths
 		const ths = this._getThs();
@@ -281,17 +334,29 @@ class TableColumnResizer {
 	_onDoubleClick(e, th, idx) {
 		e.preventDefault();
 		e.stopPropagation();
-		// Reset this column to auto width
+		// Auto-fit this column to its content width
+		// Temporarily unlock, measure, then re-lock
 		th.style.width = '';
 		th.style.minWidth = '';
 		th.style.maxWidth = '';
-
-		// Remove colgroup lock for this column
 		const colgroup = this.tableEl.querySelector('colgroup.pos-resize-colgroup');
 		if (colgroup && colgroup.children[idx]) {
 			colgroup.children[idx].style.width = '';
 			colgroup.children[idx].style.minWidth = '';
 			colgroup.children[idx].style.maxWidth = '';
+		}
+		this.tableEl.style.setProperty('table-layout', 'auto', 'important');
+		void this.tableEl.offsetWidth; // reflow
+		const autoWidth = Math.max(th.offsetWidth, MIN_COL_WIDTH);
+		this.tableEl.style.setProperty('table-layout', 'fixed', 'important');
+
+		th.style.width = autoWidth + 'px';
+		th.style.minWidth = autoWidth + 'px';
+		th.style.maxWidth = autoWidth + 'px';
+		if (colgroup && colgroup.children[idx]) {
+			colgroup.children[idx].style.width = autoWidth + 'px';
+			colgroup.children[idx].style.minWidth = autoWidth + 'px';
+			colgroup.children[idx].style.maxWidth = autoWidth + 'px';
 		}
 
 		this._saveWidths();

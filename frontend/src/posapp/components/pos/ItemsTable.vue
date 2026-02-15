@@ -1368,7 +1368,7 @@ export default {
 }
 
 .pos-table :deep(table) {
-	table-layout: fixed;
+	table-layout: auto;
 	min-width: 100%;
 }
 
@@ -2226,7 +2226,7 @@ body[dir="rtl"] .expanded-content .pos-table__qty-display {
 	min-width: 100% !important;
 	margin: 0 !important;
 	border-collapse: collapse !important;
-	table-layout: fixed !important;
+	table-layout: auto !important;
 }
 
 .pos-table :deep(thead),
