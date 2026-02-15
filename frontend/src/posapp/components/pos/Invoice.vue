@@ -354,6 +354,7 @@ import { storeToRefs } from "pinia";
 import stockCoordinator from "../../utils/stockCoordinator.js";
 import { parseBooleanSetting } from "../../utils/stock.js";
 import { isOffline, getDraftInvoices, setDraftInvoices, savePriceListNames, getCachedPriceListNames } from "../../../offline/index.js";
+import { userKey } from "./columnResize.js";
 
 export default {
 	name: "POSInvoice",
@@ -780,7 +781,7 @@ export default {
 
 		saveColumnPreferences() {
 			try {
-				localStorage.setItem("posawesome_selected_columns", JSON.stringify(this.selected_columns));
+				localStorage.setItem(userKey("posawesome_selected_columns"), JSON.stringify(this.selected_columns));
 			} catch (e) {
 				console.error("Failed to save column preferences:", e);
 			}
@@ -788,7 +789,7 @@ export default {
 
 		loadColumnPreferences() {
 			try {
-				const saved = localStorage.getItem("posawesome_selected_columns");
+				const saved = localStorage.getItem(userKey("posawesome_selected_columns"));
 				if (saved) {
 					const parsed = JSON.parse(saved);
 					// Filter out removed columns (e.g. price_list_rate)
@@ -1217,7 +1218,7 @@ export default {
 		},
 
 		formatCurrency(value, precision = null) {
-			const prec = precision != null ? precision : this.currency_precision;
+			const prec = precision != null ? precision : 0;
 			return this.$options.mixins[0].methods.formatCurrency.call(this, value, prec);
 		},
 

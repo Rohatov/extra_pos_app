@@ -199,6 +199,7 @@
 </template>
 
 <script>
+import { userKey } from "./columnResize.js";
 export default {
 	props: {
 		pos_profile: Object,
@@ -247,7 +248,7 @@ export default {
 	computed: {
 		hide_qty_decimals() {
 			try {
-				const saved = localStorage.getItem("posawesome_item_selector_settings");
+				const saved = localStorage.getItem(userKey("posawesome_item_selector_settings"));
 				if (saved) {
 					const opts = JSON.parse(saved);
 					return !!opts.hide_qty_decimals;
@@ -289,7 +290,13 @@ export default {
 			if (value === 0 || value === "0") {
 				return "";
 			}
-			return value;
+			// Format with space thousands separator (ru-RU)
+			const num = parseFloat(String(value).replace(/\s/g, "")) || 0;
+			if (num === 0) return "";
+			return new Intl.NumberFormat("ru-RU", {
+				minimumFractionDigits: 0,
+				maximumFractionDigits: 0,
+			}).format(num);
 		},
 		syncDiscountInputDisplay() {
 			// Final price mode: show grossTotal - discount
@@ -302,7 +309,7 @@ export default {
 		handleDiscountInputUpdate(value) {
 			// Final price mode: discount = grossTotal - entered value
 			const gross = parseFloat(this.grossTotal) || 0;
-			const enteredPrice = parseFloat(value) || 0;
+			const enteredPrice = parseFloat(String(value).replace(/\s/g, "")) || 0;
 			const discount = gross - enteredPrice;
 			this.$emit("update:additional_discount", discount >= 0 ? discount : 0);
 		},

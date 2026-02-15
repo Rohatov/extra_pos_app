@@ -192,7 +192,7 @@ export default {
 			}
 		},
 		formatCurrency(value) {
-			return this.$options.mixins[0].methods.formatCurrency.call(this, value, 2);
+			return this.$options.mixins[0].methods.formatCurrency.call(this, value, 0);
 		},
 	},
 	created: function () {

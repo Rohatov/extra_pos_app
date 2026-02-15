@@ -153,7 +153,7 @@ export default {
 			this.varaintsDialog = false;
 		},
 		formatCurrency(value) {
-			return this.$options.mixins[0].methods.formatCurrency.call(this, value, 2);
+			return this.$options.mixins[0].methods.formatCurrency.call(this, value, 0);
 		},
 		formatCurrencySafe(val) {
 			const mixinFn =
@@ -163,11 +163,11 @@ export default {
 				this.$options.mixins[0].methods.formatCurrency;
 
 			if (mixinFn) {
-				return mixinFn.call(this, val, 2);
+				return mixinFn.call(this, val, 0);
 			}
 			return new Intl.NumberFormat("en-PK", {
 				minimumFractionDigits: 0,
-				maximumFractionDigits: 2,
+				maximumFractionDigits: 0,
 			}).format(val);
 		},
 		applyCurrencyConversionToItem(item) {

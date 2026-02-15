@@ -36,11 +36,11 @@ class TableColumnResizer {
 		return Array.from(this.tableEl.querySelectorAll('thead th'));
 	}
 
-	/** Are the resize handles still attached to the DOM? */
+	/** Are the resize handles still attached to the live DOM? */
 	_handlesLost() {
 		return (
 			this.handles.length === 0 ||
-			(this.handles.length > 0 && !this.handles[0].parentElement)
+			(this.handles.length > 0 && !this.handles[0].isConnected)
 		);
 	}
 
@@ -323,6 +323,16 @@ class TableColumnResizer {
 }
 
 /**
+ * Returns a localStorage key prefixed with the current user.
+ * @param {string} key – base key name
+ * @returns {string}
+ */
+export function userKey(key) {
+	const user = (typeof frappe !== 'undefined' && frappe.session?.user) || 'Guest';
+	return user + ':' + key;
+}
+
+/**
  * Returns a Vue Options-API mixin that wires up column resizing.
  *
  * @param {string} tableRefName   – the ref="..." name on the table component
@@ -331,6 +341,7 @@ class TableColumnResizer {
  */
 export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 	let resizer = null;
+	const prefixedKey = userKey(storageKey);
 
 	const findTable = (vm) => {
 		if (getTableEl) return getTableEl(vm);
@@ -344,10 +355,15 @@ export function columnResizeMixin(tableRefName, storageKey, getTableEl) {
 		const tableEl = findTable(vm);
 		if (!tableEl) return;
 		if (!tableEl.querySelector('thead th')) return;
+		// If resizer exists but its table element was replaced, destroy it
+		if (resizer && resizer.tableEl !== tableEl) {
+			resizer.destroy();
+			resizer = null;
+		}
 		// If resizer already exists and handles are fine, do nothing
 		if (resizer && !resizer._handlesLost()) return;
 		if (resizer) resizer.destroy();
-		resizer = new TableColumnResizer(tableEl, storageKey);
+		resizer = new TableColumnResizer(tableEl, prefixedKey);
 		resizer.init();
 	};
 

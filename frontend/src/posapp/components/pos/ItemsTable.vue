@@ -559,7 +559,7 @@ import { logComponentRender } from "../../utils/perf.js";
 import { useInvoiceStore } from "../../stores/invoiceStore.js";
 import { parseBooleanSetting } from "../../utils/stock.js";
 import CartItemRow from "./CartItemRow.vue";
-import { columnResizeMixin } from "./columnResize.js";
+import { columnResizeMixin, userKey } from "./columnResize.js";
 export default {
 	name: "ItemsTable",
 	mixins: [columnResizeMixin('tableContainer', 'posawesome_cart_col_widths')],
@@ -822,7 +822,7 @@ export default {
 		},
 		hide_qty_decimals() {
 			try {
-				const saved = localStorage.getItem("posawesome_item_selector_settings");
+				const saved = localStorage.getItem(userKey("posawesome_item_selector_settings"));
 				if (saved) {
 					const opts = JSON.parse(saved);
 					return !!opts.hide_qty_decimals;

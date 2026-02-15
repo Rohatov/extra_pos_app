@@ -2516,7 +2516,7 @@ export default {
 		},
 		// Format currency value
 		formatCurrency(value) {
-			return this.$options.mixins[0].methods.formatCurrency.call(this, value, this.currency_precision);
+			return this.$options.mixins[0].methods.formatCurrency.call(this, value, 0);
 		},
 		// Get change amount for display
 		get_change_amount() {

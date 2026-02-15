@@ -400,39 +400,6 @@
 															}}
 														</span>
 													</div>
-													<div
-														v-if="getLastInvoiceRate(item)"
-														class="last-rate-chip"
-													>
-														<v-icon size="14" class="mr-1" color="secondary"
-															>mdi-history</v-icon
-														>
-														<span class="last-rate-label">{{ __("Last") }}:</span>
-														<span class="last-rate-value">
-															{{
-																currencySymbol(
-																	getLastInvoiceRate(item).currency ||
-																		pos_profile.currency,
-																)
-															}}
-															{{
-																memoizedFormatCurrency(
-																	getLastInvoiceRate(item).rate,
-																	getLastInvoiceRate(item).currency ||
-																		pos_profile.currency,
-																	ratePrecision(
-																		getLastInvoiceRate(item).rate || 0,
-																	),
-																)
-															}}
-															<span
-																v-if="getLastInvoiceRate(item).uom"
-																class="last-rate-uom"
-															>
-																/{{ getLastInvoiceRate(item).uom }}
-															</span>
-														</span>
-													</div>
 												</div>
 												<div class="card-item-stock">
 													<v-icon size="x-small" class="stock-icon">
@@ -478,7 +445,7 @@
 							>
 								<template v-slot:item.rate="{ item }">
 									<div>
-										<div class="text-primary">
+										<div class="text-primary font-weight-bold">
 											{{
 												currencySymbol(item.original_currency || pos_profile.currency)
 											}}
@@ -489,37 +456,6 @@
 													ratePrecision(item.original_rate ?? item.rate ?? 0),
 												)
 											}}
-										</div>
-										<div
-											v-if="getLastInvoiceRate(item)"
-											class="text-caption d-flex align-center last-rate-inline"
-										>
-											<v-icon size="14" class="mr-1" color="secondary"
-												>mdi-history</v-icon
-											>
-											<span class="mr-1">{{ __("Last") }}:</span>
-											<span class="font-weight-medium">
-												{{
-													currencySymbol(
-														getLastInvoiceRate(item).currency ||
-															pos_profile.currency,
-													)
-												}}
-												{{
-													memoizedFormatCurrency(
-														getLastInvoiceRate(item).rate,
-														getLastInvoiceRate(item).currency ||
-															pos_profile.currency,
-														ratePrecision(getLastInvoiceRate(item).rate || 0),
-													)
-												}}
-												<span
-													v-if="getLastInvoiceRate(item).uom"
-													class="last-rate-uom"
-												>
-													/{{ getLastInvoiceRate(item).uom }}
-												</span>
-											</span>
 										</div>
 										<div
 											v-if="
@@ -679,7 +615,7 @@ import placeholderImage from "./placeholder-image.png";
 import Skeleton from "../ui/Skeleton.vue";
 import { useCustomersStore } from "../../stores/customersStore.js";
 import { storeToRefs } from "pinia";
-import { columnResizeMixin } from "./columnResize.js";
+import { columnResizeMixin, userKey } from "./columnResize.js";
 
 export default {
 	mixins: [format, columnResizeMixin('itemsTable', 'posawesome_items_col_widths')],
@@ -4446,7 +4382,7 @@ export default {
 					show_price_list_rate_column: this.show_price_list_rate_column,
 					selected_comparison_price_list: this.selected_comparison_price_list,
 				};
-				localStorage.setItem("posawesome_item_selector_settings", JSON.stringify(settings));
+				localStorage.setItem(userKey("posawesome_item_selector_settings"), JSON.stringify(settings));
 			} catch (e) {
 				console.error("Failed to save item selector settings:", e);
 			}
@@ -4462,7 +4398,7 @@ export default {
 		loadItemSettings() {
 			if (!this.localStorageAvailable) return;
 			try {
-				const saved = localStorage.getItem("posawesome_item_selector_settings");
+				const saved = localStorage.getItem(userKey("posawesome_item_selector_settings"));
 				if (saved) {
 					const opts = JSON.parse(saved);
 					if (typeof opts.hide_qty_decimals === "boolean") {

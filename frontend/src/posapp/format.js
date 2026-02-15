@@ -89,7 +89,8 @@ export const formatUtils = {
 			if (lang.startsWith("fa")) return "fa-IR"; // Persian Iran
 			return "ar-SA"; // Default to Arabic
 		}
-		return "en-US";
+		// Use Russian locale for space-separated thousands (e.g. 200 000)
+		return "ru-RU";
 	},
 };
 
@@ -97,13 +98,13 @@ export default {
 	data() {
 		return {
 			float_precision: 2,
-			currency_precision: 2,
+			currency_precision: 0,
 		};
 	},
 	methods: {
 		flt(value, precision, number_format, rounding_method) {
 			if (!precision && precision != 0) {
-				precision = this.currency_precision || 2;
+				precision = this.currency_precision || 0;
 			}
 			if (!rounding_method) {
 				rounding_method = "Banker's Rounding (legacy)";
@@ -115,12 +116,13 @@ export default {
 			if (value === null || value === undefined) {
 				value = 0;
 			}
-			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, ""));
+			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, "").replace(/\s/g, ""));
 			if (isNaN(number)) number = 0;
-			let prec = precision != null ? Number(precision) : Number(this.currency_precision) || 2;
+			// Default to 0 decimals — show whole numbers (e.g. 200 000 instead of 200 000.00)
+			let prec = precision != null ? Number(precision) : 0;
 			// Clamp precision to the valid range 0-20 to avoid RangeError
 			if (!Number.isInteger(prec) || prec < 0 || prec > 20) {
-				prec = Math.min(Math.max(parseInt(prec) || 2, 0), 20);
+				prec = Math.min(Math.max(parseInt(prec) || 0, 0), 20);
 			}
 
 			const locale = formatUtils.getNumberLocale();
@@ -140,12 +142,12 @@ export default {
 			if (value === null || value === undefined) {
 				value = 0;
 			}
-			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, ""));
+			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, "").replace(/\s/g, ""));
 			if (isNaN(number)) number = 0;
-			let prec = precision != null ? Number(precision) : Number(this.float_precision) || 2;
+			let prec = precision != null ? Number(precision) : 0;
 			// Clamp precision to the valid range 0-20 to avoid RangeError
 			if (!Number.isInteger(prec) || prec < 0 || prec > 20) {
-				prec = Math.min(Math.max(parseInt(prec) || 2, 0), 20);
+				prec = Math.min(Math.max(parseInt(prec) || 0, 0), 20);
 			}
 
 			const locale = formatUtils.getNumberLocale();
@@ -166,7 +168,7 @@ export default {
 			if (typeof input_val === "string") {
 				// Convert Arabic numerals to Western for parsing
 				input_val = formatUtils.fromArabicNumerals(input_val);
-				input_val = input_val.replace(/,/g, "");
+				input_val = input_val.replace(/,/g, "").replace(/\s/g, "");
 			}
 			let value = parseFloat(input_val);
 			if (isNaN(value)) {
@@ -187,7 +189,7 @@ export default {
 			if (typeof input_val === "string") {
 				// Convert Arabic numerals to Western for parsing
 				input_val = formatUtils.fromArabicNumerals(input_val);
-				input_val = input_val.replace(/,/g, "");
+				input_val = input_val.replace(/,/g, "").replace(/\s/g, "");
 			}
 			let value = parseFloat(input_val);
 			if (isNaN(value)) {
@@ -226,12 +228,12 @@ export default {
 			if (value === null || value === undefined) {
 				value = 0;
 			}
-			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, ""));
+			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, "").replace(/\s/g, ""));
 			if (isNaN(number)) number = 0;
-			let prec = precision != null ? Number(precision) : Number(this.currency_precision) || 2;
+			let prec = precision != null ? Number(precision) : 0;
 			// Clamp precision to the valid range 0-20 to avoid RangeError
 			if (!Number.isInteger(prec) || prec < 0 || prec > 20) {
-				prec = Math.min(Math.max(parseInt(prec) || 2, 0), 20);
+				prec = Math.min(Math.max(parseInt(prec) || 0, 0), 20);
 			}
 
 			const locale = formatUtils.getNumberLocale();
@@ -252,9 +254,9 @@ export default {
 			if (value === null || value === undefined) {
 				value = 0;
 			}
-			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, ""));
+			let number = Number(formatUtils.fromArabicNumerals(String(value)).replace(/,/g, "").replace(/\s/g, ""));
 			if (isNaN(number)) number = 0;
-			let prec = precision != null ? Number(precision) : Number(this.float_precision) || 2;
+			let prec = precision != null ? Number(precision) : 0;
 			// Clamp precision to the valid range 0-20 to avoid RangeError
 			if (!Number.isInteger(prec) || prec < 0 || prec > 20) {
 				prec = Math.min(Math.max(parseInt(prec) || 2, 0), 20);
@@ -274,8 +276,8 @@ export default {
 		},
 	},
 	mounted() {
-		this.float_precision = frappe.defaults.get_default("float_precision") || 2;
-		this.currency_precision = frappe.defaults.get_default("currency_precision") || 2;
+		this.float_precision = frappe.defaults.get_default("float_precision") || 0;
+		this.currency_precision = frappe.defaults.get_default("currency_precision") || 0;
 
 		const updatePrecision = (data) => {
 			const profile = data.pos_profile || data;
