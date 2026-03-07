@@ -7,6 +7,7 @@
     "build": "cd frontend && yarn build",
     "build:ui": "cd frontend && yarn build",
     "build:exe": "yarn build:ui && electron-builder --win",
+    "build:win-cross": "bash scripts/build-win.sh",
     "electron:dev": "electron .",
     "electron:build": "electron-builder",
     "electron:build:linux": "electron-builder --linux",
@@ -17,6 +18,7 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "@vuepic/vue-datepicker": "11.0.2",
     "@vueuse/core": "^13.4.0",
+    "better-sqlite3": "^12.6.2",
     "electron-store": "^10.0.1",
     "lodash": "^4.17.21",
     "mitt": "^3.0.1",
@@ -41,9 +43,9 @@
     "@semantic-release/github": "^11.0.4",
     "@semantic-release/release-notes-generator": "^14.0.3",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.5",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.5",
     "eslint": "^9.16.0",
     "eslint-plugin-vue": "^9.32.0",
     "eslint-plugin-vuetify": "^2.5.1",
@@ -88,7 +90,10 @@
       {
         "from": "electron/icons",
         "to": "icons",
-        "filter": ["icon.png", "icon.ico"]
+        "filter": [
+          "icon.png",
+          "icon.ico"
+        ]
       }
     ]
   },
