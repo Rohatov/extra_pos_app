@@ -405,7 +405,11 @@ export default {
 			this.$emit("nav-click");
 		},
 		goDesk() {
-			window.location.href = "/app";
+			if (window.posAPI && window.posAPI.loadPosPage) {
+				window.posAPI.loadPosPage();
+			} else {
+				window.location.href = "/app";
+			}
 		},
 		changePage(page) {
 			this.$emit("change-page", page);

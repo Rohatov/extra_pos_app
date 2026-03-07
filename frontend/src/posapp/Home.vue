@@ -370,6 +370,12 @@ export default {
 				"&no_letterhead=" +
 				letter_head;
 
+			// In Electron mode, fetch print HTML via API and print locally
+			if (window.posAPI) {
+				this.electronPrint(doctype, this.lastInvoiceId, print_format, letter_head, debugPrint);
+				return;
+			}
+
 			url = appendDebugPrintParam(url, debugPrint);
 			const printOptions = {
 				allowOfflineFallback: isOffline(),
@@ -385,6 +391,38 @@ export default {
 			} else {
 				const printWindow = window.open(url, "Print");
 				watchPrintWindow(printWindow, printOptions);
+			}
+		},
+
+		async electronPrint(doctype, name, printFormat, letterHead, debugPrint) {
+			try {
+				const result = await frappe.call({
+					method: "frappe.www.printview.get_rendered_raw_commands",
+					args: {
+						doc: name,
+						doctype: doctype,
+						print_format: printFormat,
+						no_letterhead: letterHead,
+					},
+				});
+				const html = result?.message?.html || result?.message || "";
+				if (!html) {
+					// Fallback: open print URL in external browser
+					const url = frappe.urllib.get_base_url() +
+						"/printview?doctype=" + encodeURIComponent(doctype) +
+						"&name=" + name + "&trigger_print=1&format=" + printFormat +
+						"&no_letterhead=" + letterHead;
+					window.open(url);
+					return;
+				}
+				const printWin = window.open("", "Print");
+				printWin.document.write(html);
+				printWin.document.close();
+				printWin.focus();
+				printWin.print();
+			} catch (err) {
+				console.error("[print] Electron print failed:", err);
+				frappe.show_alert({ message: __("Print failed: ") + err.message, indicator: "red" });
 			}
 		},
 
@@ -436,6 +474,11 @@ export default {
 		},
 
 		handleLogout() {
+			if (window.posAPI) {
+				// Electron: go back to setup screen
+				window.posAPI.loadPosPage();
+				return;
+			}
 			frappe.call("logout").finally(() => {
 				window.location.href = "/app";
 			});

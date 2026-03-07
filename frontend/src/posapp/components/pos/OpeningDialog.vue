@@ -282,11 +282,19 @@ export default {
 		},
 
 		go_desk() {
+			if (window.posAPI && window.posAPI.loadPosPage) {
+				window.posAPI.loadPosPage();
+				return;
+			}
 			frappe.set_route("/");
 			location.reload();
 		},
 
 		logout() {
+			if (window.posAPI) {
+				window.posAPI.loadPosPage();
+				return;
+			}
 			const redirectTarget = "/app/posapp";
 			const loginPath = `/login?redirect-to=${encodeURIComponent(redirectTarget)}`;
 			frappe.call("logout").finally(() => {

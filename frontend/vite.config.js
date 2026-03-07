@@ -26,7 +26,7 @@ function posawesomeBuildVersionPlugin(version) {
 }
 
 export default defineConfig({
-	base: "/assets/posawesome/dist/js/",
+	base: "./",
 	plugins: [
 		posawesomeBuildVersionPlugin(buildVersion),
 		frappeVueStyle(),
@@ -58,14 +58,14 @@ export default defineConfig({
 	},
 	build: {
 		target: "esnext",
-		outDir: "../posawesome/public/dist/js",
+		outDir: "../electron/dist",
 		emptyOutDir: true,
 		cssCodeSplit: false,
 		rollupOptions: {
 			input: {
 				posawesome: path.resolve(__dirname, "src/posawesome.bundle.js"),
 			},
-			external: ["socket.io-client"],
+			external: [],
 			output: {
 				format: "es",
 				entryFileNames: "[name].js",

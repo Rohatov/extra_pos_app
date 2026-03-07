@@ -19,8 +19,11 @@ class OpenCVWorkerManager {
 
 	async _doInitialize() {
 		try {
-			// Create Web Worker using static URL to avoid build issues (non-module worker for importScripts compatibility)
-			this.worker = new Worker("/assets/posawesome/dist/js/posapp/workers/opencvWorker.js");
+			// Create Web Worker - use relative path for Electron, absolute for web
+			const workerPath = window.posAPI
+				? new URL("../dist/posapp/workers/opencvWorker.js", document.baseURI).href
+				: "/assets/posawesome/dist/js/posapp/workers/opencvWorker.js";
+			this.worker = new Worker(workerPath);
 
 			// Set up message handler
 			this.worker.onmessage = (e) => {

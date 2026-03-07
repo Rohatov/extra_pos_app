@@ -159,75 +159,142 @@
 		<div class="card">
 			<h1>POS Awesome Desktop</h1>
 			<p class="description">
-				POS Awesome Desktop needs your server URL to launch. Enter your ERPNext / POS Awesome server URL below;
-				we will automatically add the <code>/app/posapp</code> path and save the URL locally for the next
-				startup.
+				Connect to your ERPNext server. Enter the server URL and API credentials below.
+				Generate API keys in ERPNext: User Settings &rarr; API Access.
 			</p>
 
 			<form id="server-form">
 				<label for="server-url">Server URL</label>
 				<input id="server-url" type="text" name="server-url" placeholder="https://pos.example.com" autocomplete="off" required />
+
+				<label for="api-key" style="margin-top: 16px;">API Key</label>
+				<input id="api-key" type="text" name="api-key" placeholder="your-api-key" autocomplete="off" required />
+
+				<label for="api-secret" style="margin-top: 16px;">API Secret</label>
+				<input id="api-secret" type="text" name="api-secret" placeholder="your-api-secret" autocomplete="off" required />
+
+				<label for="pos-profile" style="margin-top: 16px;">POS Profile <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+				<input id="pos-profile" type="text" name="pos-profile" placeholder="e.g. POS Profile - Main" autocomplete="off" />
+
+				<label for="price-list" style="margin-top: 16px;">Price List <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+				<input id="price-list" type="text" name="price-list" placeholder="e.g. Standard Selling" autocomplete="off" />
+
 				<div class="actions">
 					<button class="primary" type="submit">Save &amp; Launch</button>
-					<button class="secondary" type="button" id="open-saved">Open saved server</button>
-					<button class="danger" type="button" id="reset-server">Clear saved URL</button>
+					<button class="secondary" type="button" id="test-connection">Test Connection</button>
+					<button class="danger" type="button" id="reset-server">Reset All</button>
 				</div>
 			</form>
 
-			<div class="status" id="status">Checking saved server&hellip;</div>
+			<div class="status" id="status">Loading saved configuration&hellip;</div>
 
 			<div class="hint">
 				<ul>
-					<li>Example: <strong>https://yourdomain.com</strong> (we will append <code>/app/posapp</code>).</li>
-					<li>The saved URL is stored on disk for offline use.</li>
-					<li>Open settings again using the <em>Change server</em> option in the app menu.</li>
+					<li>Server URL example: <strong>https://yourdomain.com</strong></li>
+					<li>API Key and Secret are required for authentication.</li>
+					<li>Generate them in ERPNext: <em>User &rarr; Settings &rarr; API Access &rarr; Generate Keys</em></li>
 				</ul>
 			</div>
 		</div>
 		<script>
 			const statusEl = document.getElementById("status");
-			const input = document.getElementById("server-url");
-			const openSaved = document.getElementById("open-saved");
+			const inputUrl = document.getElementById("server-url");
+			const inputKey = document.getElementById("api-key");
+			const inputSecret = document.getElementById("api-secret");
+			const inputProfile = document.getElementById("pos-profile");
+			const inputPriceList = document.getElementById("price-list");
 			const resetButton = document.getElementById("reset-server");
+			const testButton = document.getElementById("test-connection");
 
 			function setStatus(text, tone = "muted") {
 				statusEl.textContent = text;
-				statusEl.style.color = tone === "error" ? "var(--danger)" : "var(--muted)";
+				statusEl.style.color = tone === "error" ? "var(--danger)" : tone === "success" ? "#22c55e" : "var(--muted)";
 			}
 
 			async function hydrate() {
-				const saved = await window.electronAPI.getServerUrl();
-				if (saved) {
-					input.value = saved;
-					setStatus(`Saved server: ${saved}`);
-				} else {
-					setStatus("No server saved yet.");
+				try {
+					const config = await window.posAPI.getConfig();
+					if (config.serverUrl) inputUrl.value = config.serverUrl;
+					if (config.apiKey) inputKey.value = config.apiKey;
+					if (config.apiSecret) inputSecret.value = config.apiSecret;
+					if (config.posProfile) inputProfile.value = config.posProfile;
+					if (config.priceList) inputPriceList.value = config.priceList;
+					if (config.serverUrl && config.apiKey) {
+						setStatus("Configuration loaded. Edit or press Save & Launch.");
+					} else {
+						setStatus("Enter your server details to get started.");
+					}
+				} catch (e) {
+					setStatus("Enter your server details to get started.");
 				}
 			}
 
 			document.getElementById("server-form").addEventListener("submit", async (event) => {
 				event.preventDefault();
-				const raw = input.value.trim();
-				setStatus("Validating URL...");
+				const url = inputUrl.value.trim();
+				const key = inputKey.value.trim();
+				const secret = inputSecret.value.trim();
+
+				if (!url || !key || !secret) {
+					setStatus("Server URL, API Key and API Secret are required.", "error");
+					return;
+				}
+
+				setStatus("Saving configuration...");
 				try {
-					const normalized = await window.electronAPI.setServerUrl(raw);
-					setStatus(`Launching ${normalized}`);
+					await window.posAPI.saveConfig({
+						serverUrl: url,
+						apiKey: key,
+						apiSecret: secret,
+						posProfile: inputProfile.value.trim(),
+						priceList: inputPriceList.value.trim(),
+					});
+					setStatus("Configuration saved. Launching POS...");
+					await window.posAPI.loadPosPage();
 				} catch (error) {
-					setStatus(error?.message || "Invalid URL", "error");
+					setStatus(error?.message || "Failed to save configuration", "error");
 				}
 			});
 
-			openSaved.addEventListener("click", async () => {
-				const result = await window.electronAPI.retryLoad();
-				if (!result?.launched) {
-					setStatus("No saved server found.", "error");
+			testButton.addEventListener("click", async () => {
+				const url = inputUrl.value.trim();
+				const key = inputKey.value.trim();
+				const secret = inputSecret.value.trim();
+
+				if (!url || !key || !secret) {
+					setStatus("Fill in Server URL, API Key and Secret first.", "error");
+					return;
+				}
+
+				setStatus("Testing connection...");
+				try {
+					// Save temporarily so probe can use them
+					await window.posAPI.saveConfig({
+						serverUrl: url,
+						apiKey: key,
+						apiSecret: secret,
+						posProfile: inputProfile.value.trim(),
+						priceList: inputPriceList.value.trim(),
+					});
+					const probe = await window.electronAPI.probeServer();
+					if (probe.reachable) {
+						setStatus("Connection successful! Server is reachable.", "success");
+					} else {
+						setStatus("Cannot reach server: " + (probe.message || "Unknown error"), "error");
+					}
+				} catch (error) {
+					setStatus("Connection test failed: " + (error?.message || "Unknown error"), "error");
 				}
 			});
 
 			resetButton.addEventListener("click", async () => {
 				await window.electronAPI.resetServer();
-				input.value = "";
-				setStatus("Saved server cleared.");
+				inputUrl.value = "";
+				inputKey.value = "";
+				inputSecret.value = "";
+				inputProfile.value = "";
+				inputPriceList.value = "";
+				setStatus("All settings cleared.");
 			});
 
 			hydrate();

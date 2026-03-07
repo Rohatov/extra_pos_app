@@ -127,8 +127,13 @@ export default {
 
 		if (key === "Home") {
 			consumeEvent(event);
-			frappe.set_route("/");
-			location.reload();
+			// In Electron: reload POS page; in web: go to desk
+			if (window.posAPI && window.posAPI.loadPosPage) {
+				window.posAPI.loadPosPage();
+			} else {
+				frappe.set_route("/");
+				location.reload();
+			}
 			return;
 		}
 

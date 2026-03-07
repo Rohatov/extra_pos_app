@@ -1,7 +1,5 @@
 import { ref, onUnmounted } from "vue";
 
-const API_URL = "/api/method/posawesome.posawesome.api.utilities.get_server_usage";
-
 export function useServerCpu(pollInterval = 10000, windowSize = 60) {
 	const cpu = ref(null);
 	const memory = ref(null);
@@ -17,8 +15,9 @@ export function useServerCpu(pollInterval = 10000, windowSize = 60) {
 		loading.value = true;
 		error.value = null;
 		try {
-			const res = await fetch(API_URL);
-			const data = await res.json();
+			const data = await frappe.call({
+				method: "posawesome.posawesome.api.utilities.get_server_usage",
+			});
 			if (data && data.message) {
 				cpu.value = data.message.cpu_percent;
 				memory.value = data.message.memory_percent;

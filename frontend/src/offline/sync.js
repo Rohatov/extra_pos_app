@@ -75,10 +75,12 @@ export function saveOfflineInvoice(entry) {
 }
 
 export function isOffline() {
-	// In Electron mode, we always have local SQLite — never truly "offline"
-	// from the POS perspective. Background sync handles server communication.
+	// In Electron mode, check both manual toggle and actual connectivity.
+	// When the network is down, the POS should save to local SQLite.
 	if (isElectron()) {
-		return memory.manual_offline || false;
+		if (memory.manual_offline) return true;
+		if (typeof window !== "undefined" && !window.navigator.onLine) return true;
+		return false;
 	}
 
 	// Use cached data when running offline

@@ -243,7 +243,11 @@ export async function getStoredItemsCount() {
 
 export async function saveItems(items) {
 	if (isElectron()) {
-		// In Electron mode, items are managed by background sync — no-op
+		try {
+			await window.posAPI.saveItemsBulk(items);
+		} catch (e) {
+			console.error("Failed to save items to SQLite", e);
+		}
 		return;
 	}
 	try {
@@ -257,7 +261,11 @@ export async function saveItems(items) {
 
 export async function clearStoredItems() {
 	if (isElectron()) {
-		// Items are managed by background sync in Electron
+		try {
+			await window.posAPI.clearAllItems();
+		} catch (e) {
+			console.error("Failed to clear items in SQLite", e);
+		}
 		return;
 	}
 	_storedItems.length = 0;
@@ -268,7 +276,11 @@ const _storedCustomers = [];
 export async function getCustomerStorage(limit = Infinity, offset = 0) {
 	if (isElectron()) {
 		const opts = {};
-		if (Number.isFinite(limit) && limit < Infinity) opts.limit = limit;
+		if (Number.isFinite(limit) && limit < Infinity) {
+			opts.limit = limit;
+		} else {
+			opts.limit = 100000;
+		}
 		if (offset > 0) opts.offset = offset;
 		return window.posAPI.getCustomers(opts);
 	}
@@ -277,7 +289,11 @@ export async function getCustomerStorage(limit = Infinity, offset = 0) {
 
 export async function setCustomerStorage(customers) {
 	if (isElectron()) {
-		// Customers are managed by background sync in Electron — no-op
+		try {
+			await window.posAPI.saveCustomers(customers);
+		} catch (e) {
+			console.error("Failed to save customers to SQLite", e);
+		}
 		return;
 	}
 	try {
@@ -306,6 +322,11 @@ export async function getCustomerStorageCount() {
 
 export async function clearCustomerStorage() {
 	if (isElectron()) {
+		try {
+			await window.posAPI.clearAllCustomers();
+		} catch (e) {
+			console.error("Failed to clear customers in SQLite", e);
+		}
 		return;
 	}
 	_storedCustomers.length = 0;

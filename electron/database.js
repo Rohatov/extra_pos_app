@@ -361,6 +361,16 @@ function getCustomersCount() {
 	return row ? row.cnt : 0;
 }
 
+function clearAllCustomers() {
+	db.prepare("DELETE FROM customers").run();
+	return { cleared: true };
+}
+
+function clearAllItems() {
+	db.prepare("DELETE FROM items").run();
+	return { cleared: true };
+}
+
 // ---------------------------------------------------------------------------
 // INVOICES (offline queue)
 // ---------------------------------------------------------------------------
@@ -842,6 +852,8 @@ module.exports = {
 	upsertCustomers,
 	getCustomers,
 	getCustomersCount,
+	clearAllCustomers,
+	clearAllItems,
 	// Invoices
 	saveInvoice,
 	getPendingInvoices,

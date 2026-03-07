@@ -21,10 +21,14 @@ contextBridge.exposeInMainWorld("posAPI", {
 	getItemByBarcode: (barcode) => ipcRenderer.invoke("get-item-by-barcode", barcode),
 	getItemsCount: () => ipcRenderer.invoke("get-items-count"),
 	getItemImagePath: (itemCode) => ipcRenderer.invoke("get-item-image-path", itemCode),
+	saveItemsBulk: (items) => ipcRenderer.invoke("save-items-bulk", items),
+	clearAllItems: () => ipcRenderer.invoke("clear-all-items"),
 
 	// Customers
 	getCustomers: (opts) => ipcRenderer.invoke("get-customers", opts),
 	getCustomersCount: () => ipcRenderer.invoke("get-customers-count"),
+	saveCustomers: (customers) => ipcRenderer.invoke("save-customers", customers),
+	clearAllCustomers: () => ipcRenderer.invoke("clear-all-customers"),
 
 	// Invoices
 	saveInvoice: (invoice) => ipcRenderer.invoke("save-invoice", invoice),
@@ -50,4 +54,16 @@ contextBridge.exposeInMainWorld("posAPI", {
 	// Stats
 	getDbStats: () => ipcRenderer.invoke("get-db-stats"),
 	getImagesDir: () => ipcRenderer.invoke("get-images-dir"),
+
+	// Frappe API proxy — routes frappe.call() through IPC → main → HTTP
+	frappeCall: (method, args) => ipcRenderer.invoke("frappe-call", method, args),
+
+	// Boot config — loaded at startup to populate frappe.session, frappe.boot
+	getBootConfig: () => ipcRenderer.invoke("get-boot-config"),
+
+	// Load POS page in main window
+	loadPosPage: () => ipcRenderer.invoke("load-pos-page"),
+
+	// Notify main process that network is back online (triggers immediate sync)
+	notifyOnline: () => ipcRenderer.send("network-online"),
 });

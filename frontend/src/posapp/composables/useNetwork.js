@@ -82,6 +82,10 @@ export function setupNetworkListeners() {
 		this.networkOnline = true;
 		this.internetReachable = true;
 		console.log("Network: Online");
+		// Notify Electron main process to trigger immediate sync
+		if (window.posAPI?.notifyOnline) {
+			window.posAPI.notifyOnline();
+		}
 		// Verify actual connectivity
 		this.checkNetworkConnectivity();
 	});
@@ -129,25 +133,28 @@ export async function checkNetworkConnectivity() {
 		let isConnected = false;
 		let isInternetReachable = false;
 
-		const deskRequest = fetch("/app", {
+		// Use server base URL for connectivity checks (works in both web and Electron)
+		const baseUrl = frappe?.urllib?.get_base_url?.() || window.location.origin;
+
+		const deskRequest = fetch(`${baseUrl}/app`, {
 			method: "HEAD",
 			cache: "no-cache",
 			signal: AbortSignal.timeout(DESK_TIMEOUT),
 		}).then((r) => r.status < 500);
 
-		const staticRequest = fetch("/assets/frappe/images/frappe-logo.png", {
+		const pingRequest = fetch(`${baseUrl}/api/method/ping`, {
 			method: "HEAD",
 			cache: "no-cache",
 			signal: AbortSignal.timeout(STATIC_TIMEOUT),
 		}).then((r) => r.status < 500);
 
-		const originRequest = fetch(window.location.origin, {
+		const originRequest = fetch(baseUrl, {
 			method: "HEAD",
 			cache: "no-cache",
 			signal: AbortSignal.timeout(ORIGIN_TIMEOUT),
 		}).then((r) => r.status < 500);
 
-		const localCheck = Promise.any([deskRequest, staticRequest, originRequest]).catch(() => false);
+		const localCheck = Promise.any([deskRequest, pingRequest, originRequest]).catch(() => false);
 
 		const externalCheck = (async () => {
 			try {
@@ -251,10 +258,11 @@ export async function performConnectivityChecks(hostname, protocol, port) {
 
 export async function checkFrappePing() {
 	try {
+		const baseUrl = frappe?.urllib?.get_base_url?.() || window.location.origin;
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-		const response = await fetch("/api/method/ping", {
+		const response = await fetch(`${baseUrl}/api/method/ping`, {
 			method: "HEAD",
 			cache: "no-cache",
 			signal: controller.signal,

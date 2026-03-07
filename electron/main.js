@@ -1,6 +1,24 @@
 const path = require("path");
-const { app, BrowserWindow, ipcMain, net, shell, Menu, Tray } = require("electron");
+const { pathToFileURL } = require("url");
+const { app, BrowserWindow, ipcMain, net, protocol, shell, Menu, Tray } = require("electron");
 const posDb = require("./database.js");
+
+// ---------------------------------------------------------------------------
+// Custom protocol — allows ES module loading from local files
+// Must be called before app.whenReady()
+// ---------------------------------------------------------------------------
+protocol.registerSchemesAsPrivileged([
+	{
+		scheme: "pos",
+		privileges: {
+			standard: true,
+			secure: true,
+			supportFetchAPI: true,
+			corsEnabled: false,
+			stream: true,
+		},
+	},
+]);
 
 const DEFAULT_PATH = "/app/posapp";
 
@@ -143,8 +161,10 @@ function createWindow() {
 	});
 
 	const target = getStoredUrl();
-	if (target) {
-		loadServer(target);
+	const apiKey = store ? store.get("apiKey", "") : "";
+	const apiSecret = store ? store.get("apiSecret", "") : "";
+	if (target && apiKey && apiSecret) {
+		loadPos();
 	} else {
 		loadSetup();
 	}
@@ -160,6 +180,10 @@ function loadOffline() {
 	mainWindow.loadFile(offlinePath);
 }
 
+function loadPos() {
+	mainWindow.loadURL("pos://app/renderer/pos.html");
+}
+
 function loadServer(serverUrl) {
 	if (!store) {
 		return;
@@ -171,7 +195,8 @@ function loadServer(serverUrl) {
 	}
 
 	store.set("serverUrl", normalized);
-	mainWindow.loadURL(normalized);
+	// Always load the standalone POS interface — API calls go through IPC
+	loadPos();
 }
 
 async function probeServer() {
@@ -202,6 +227,23 @@ app.on("window-all-closed", () => {
 app.whenReady().then(async () => {
 	await ensureStoreReady();
 	app.setAppUserModelId("com.posawesome.desktop");
+
+	// Register custom protocol handler for local file serving
+	// This allows ES module imports to work from local files
+	const electronDir = path.normalize(__dirname);
+	protocol.handle("pos", (request) => {
+		const url = new URL(request.url);
+		const filePath = path.normalize(
+			path.join(electronDir, decodeURIComponent(url.pathname)),
+		);
+
+		// Prevent path traversal outside the electron directory
+		if (!filePath.startsWith(electronDir)) {
+			return new Response("Forbidden", { status: 403 });
+		}
+
+		return net.fetch(pathToFileURL(filePath).href);
+	});
 
 	// Open the SQLite database
 	posDb.open();
@@ -311,6 +353,14 @@ ipcMain.handle("get-item-image-path", (_event, itemCode) => {
 	return posDb.getItemImagePath(itemCode);
 });
 
+ipcMain.handle("save-items-bulk", (_event, items) => {
+	return posDb.upsertItems(items);
+});
+
+ipcMain.handle("clear-all-items", () => {
+	return posDb.clearAllItems();
+});
+
 // ---------------------------------------------------------------------------
 // Customers (SQLite) IPC handlers
 // ---------------------------------------------------------------------------
@@ -321,6 +371,14 @@ ipcMain.handle("get-customers", (_event, opts) => {
 
 ipcMain.handle("get-customers-count", () => {
 	return posDb.getCustomersCount();
+});
+
+ipcMain.handle("save-customers", (_event, customers) => {
+	return posDb.upsertCustomers(customers);
+});
+
+ipcMain.handle("clear-all-customers", () => {
+	return posDb.clearAllCustomers();
 });
 
 // ---------------------------------------------------------------------------
@@ -399,6 +457,186 @@ ipcMain.handle("get-images-dir", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Frappe API proxy — routes frappe.call() from renderer to ERPNext via HTTP
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("frappe-call", async (_event, method, args) => {
+	await ensureStoreReady();
+	const serverUrl = store.get("serverUrl", "");
+	const apiKey = store.get("apiKey", "");
+	const apiSecret = store.get("apiSecret", "");
+
+	if (!serverUrl) {
+		throw new Error("No server URL configured. Please set up the server connection.");
+	}
+	if (!apiKey || !apiSecret) {
+		throw new Error("API credentials not configured. Please set API Key and Secret in settings.");
+	}
+
+	// Map frappe.call method names to REST endpoints
+	// frappe.call({ method: "some.dotted.path", args: {...} })
+	// → POST /api/method/some.dotted.path  body: {...args}
+	const endpoint = `/api/method/${method}`;
+
+	const result = await posDb.erpRequest(serverUrl, apiKey, apiSecret, {
+		method: "POST",
+		endpoint,
+		body: args || {},
+	});
+
+	return result;
+});
+
+// ---------------------------------------------------------------------------
+// Boot config — populates frappe.session, frappe.boot in the renderer
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("get-boot-config", async () => {
+	await ensureStoreReady();
+	const serverUrl = store.get("serverUrl", "");
+	const apiKey = store.get("apiKey", "");
+	const apiSecret = store.get("apiSecret", "");
+	const posProfile = store.get("posProfile", "");
+
+	const config = {
+		serverUrl: serverUrl ? serverUrl.replace(/\/app\/posapp.*$/, "") : "",
+		user: "",
+		user_fullname: "",
+		pos_profile: null,
+		sysdefaults: {},
+		lang: "en",
+		use_western_numerals: true,
+		website_settings: {},
+		translations: {},
+	};
+
+	// If we have credentials, fetch user info and boot data from server
+	if (serverUrl && apiKey && apiSecret) {
+		try {
+			const baseUrl = serverUrl.replace(/\/app\/posapp.*$/, "");
+
+			// Get logged-in user info
+			const userResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+				method: "GET",
+				endpoint: "/api/method/frappe.auth.get_logged_user",
+			});
+			config.user = userResult.message || apiKey.split(":")[0] || "Administrator";
+
+			// Get user fullname
+			try {
+				const fullnameResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "GET",
+					endpoint: `/api/resource/User/${encodeURIComponent(config.user)}?fields=["full_name"]`,
+				});
+				config.user_fullname = fullnameResult.data?.full_name || config.user;
+			} catch (_) {
+				config.user_fullname = config.user;
+			}
+
+			// Get system defaults
+			try {
+				const defaults = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "GET",
+					endpoint: "/api/resource/System Settings?fields=[\"country\",\"language\",\"date_format\",\"time_format\",\"number_format\",\"currency\"]",
+				});
+				const d = defaults.data || {};
+				config.sysdefaults = {
+					company: d.company || "",
+					country: d.country || "",
+					currency: d.currency || "",
+				};
+				config.lang = d.language || "en";
+			} catch (_) {
+				// Use defaults
+			}
+
+			// Get user defaults (Customer Group, Territory, etc.)
+			try {
+				const udResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "POST",
+					endpoint: "/api/method/frappe.client.get_user_settings",
+					body: { doctype: "Customer" },
+				});
+				// Also fetch defaults from the Defaults doctype
+				const defResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "GET",
+					endpoint: `/api/resource/User Permission?filters=[["user","=","${encodeURIComponent(config.user)}"]]&fields=["allow","for_value"]&limit_page_length=100`,
+				});
+				config.user_defaults = {};
+				if (defResult.data && Array.isArray(defResult.data)) {
+					for (const d of defResult.data) {
+						config.user_defaults[d.allow] = d.for_value;
+					}
+				}
+			} catch (_) {
+				config.user_defaults = {};
+			}
+
+			// Resolve the POS profile
+			if (posProfile) {
+				config.pos_profile = typeof posProfile === "string" && posProfile.startsWith("{")
+					? JSON.parse(posProfile)
+					: { name: posProfile };
+			} else {
+				// Try to get active POS profile from server
+				try {
+					const profileResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+						method: "POST",
+						endpoint: "/api/method/posawesome.posawesome.api.utils.get_active_pos_profile",
+						body: { user: config.user },
+					});
+					if (profileResult.message) {
+						config.pos_profile = profileResult.message;
+						store.set("posProfile", config.pos_profile.name || "");
+					}
+				} catch (_) {
+					// No profile — user will need to set one
+				}
+			}
+
+			// Get website settings (logo etc.)
+			try {
+				const wsResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "GET",
+					endpoint: "/api/resource/Website Settings?fields=[\"app_logo\",\"banner_image\",\"app_name\"]",
+				});
+				config.website_settings = wsResult.data || {};
+			} catch (_) {
+				// Non-critical
+			}
+
+			// Get translations for current language
+			if (config.lang && config.lang !== "en") {
+				try {
+					const trResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+						method: "POST",
+						endpoint: "/api/method/frappe.translate.get_all_translations",
+						body: { language: config.lang },
+					});
+					config.translations = trResult.message || {};
+				} catch (_) {
+					// Non-critical
+				}
+			}
+		} catch (err) {
+			console.error("[boot] Failed to load boot config from server:", err.message);
+			// Return minimal config — app will work in offline mode
+		}
+	}
+
+	return config;
+});
+
+// ---------------------------------------------------------------------------
+// Load POS page — switch from setup to POS interface
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("load-pos-page", () => {
+	mainWindow.loadURL("pos://app/renderer/pos.html");
+	return { loaded: true };
+});
+
+// ---------------------------------------------------------------------------
 // Background Sync
 // ---------------------------------------------------------------------------
 
@@ -437,6 +675,12 @@ function startBackgroundSync() {
 		runSync().catch((err) => console.error("[sync] Periodic sync error:", err.message));
 	}, 60000);
 }
+
+// Event-driven sync: renderer notifies us when network comes back online
+ipcMain.on("network-online", () => {
+	console.log("[sync] Network came back online — triggering immediate sync");
+	runSync().catch((err) => console.error("[sync] Reconnect sync error:", err.message));
+});
 
 // ---------------------------------------------------------------------------
 // Tray
