@@ -263,6 +263,7 @@ export default {
 				const r = await frappe.call({
 					method: "posawesome.posawesome.api.shifts.get_opening_dialog_data",
 					args: {},
+					error: () => {}, // suppress default toast — we handle errors below
 				});
 				if (r && r.message) {
 					vm.companies = r.message.companies.map((element) => element.name);

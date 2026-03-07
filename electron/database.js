@@ -516,7 +516,7 @@ function getRecentSyncLogs(limit = 50) {
  */
 function erpRequest(serverUrl, apiKey, apiSecret, { method = "GET", endpoint = "", body = null } = {}) {
 	return new Promise((resolve, reject) => {
-		const base = serverUrl.replace(/\/+$/, "");
+		const base = serverUrl.replace(/\/app\/posapp.*$/, "").replace(/\/+$/, "");
 		const url = `${base}${endpoint}`;
 
 		const options = { method, url };
@@ -687,7 +687,7 @@ function downloadImage(serverUrl, apiKey, apiSecret, remoteImagePath) {
 			return;
 		}
 
-		const base = serverUrl.replace(/\/+$/, "");
+		const base = serverUrl.replace(/\/app\/posapp.*$/, "").replace(/\/+$/, "");
 		// Handle both absolute URLs and relative paths
 		const imageUrl = remoteImagePath.startsWith("http")
 			? remoteImagePath
