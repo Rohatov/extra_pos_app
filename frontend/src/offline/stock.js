@@ -1,5 +1,5 @@
 import { memory } from "./cache.js";
-import { persist } from "./core.js";
+import { persist, isElectron } from "./core.js";
 
 // Modify initializeStockCache function to set the flag
 export async function initializeStockCache(items, pos_profile) {
@@ -128,6 +128,10 @@ export function updateLocalStock(items) {
 }
 
 export function getLocalStock(itemCode) {
+	if (isElectron()) {
+		// In Electron, stock is in SQLite — return null to trigger async fetch
+		return null;
+	}
 	try {
 		const stockCache = memory.local_stock_cache || {};
 		return stockCache[itemCode]?.actual_qty || null;

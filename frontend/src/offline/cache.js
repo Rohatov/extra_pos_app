@@ -1,13 +1,11 @@
 import {
-	db,
 	persist,
 	checkDbHealth,
 	terminatePersistWorker,
 	initPersistWorker,
-	tableForKey,
+	isElectron,
 } from "./core.js";
 import { clearPriceListCache } from "./items.js";
-import Dexie from "dexie/dist/dexie.mjs";
 
 const CACHE_STRUCTURE = {
 	items: ["item_code", "item_name", "item_group", "barcodes", "serials", "batches"],
@@ -95,22 +93,15 @@ export const memory = {
 	terms_and_conditions: "",
 };
 
-// Initialize memory from IndexedDB and expose a promise for consumers
+// Initialize memory from localStorage and expose a promise for consumers
 export const memoryInitPromise = (async () => {
 	try {
-		await checkDbHealth();
 		for (const key of Object.keys(memory)) {
-			const stored = await db.table(tableForKey(key)).get(key);
-			if (stored && stored.value !== undefined) {
-				memory[key] = stored.value;
-				continue;
-			}
 			if (typeof localStorage !== "undefined") {
 				const ls = localStorage.getItem(`posa_${key}`);
 				if (ls) {
 					try {
 						memory[key] = JSON.parse(ls);
-						continue;
 					} catch (err) {
 						console.error("Failed to parse localStorage for", key, err);
 					}
@@ -119,9 +110,8 @@ export const memoryInitPromise = (async () => {
 		}
 
 		// Verify cache version and clear outdated caches
-		const versionEntry = await db.table(tableForKey("cache_version")).get("cache_version");
-		let storedVersion = versionEntry ? versionEntry.value : null;
-		if (!storedVersion && typeof localStorage !== "undefined") {
+		let storedVersion = null;
+		if (typeof localStorage !== "undefined") {
 			const v = localStorage.getItem("posa_cache_version");
 			if (v) storedVersion = parseInt(v, 10);
 		}
@@ -129,7 +119,7 @@ export const memoryInitPromise = (async () => {
 			await forceClearAllCache();
 			memory.cache_version = CACHE_VERSION;
 			if (typeof localStorage !== "undefined") {
-				localStorage.setItem("posa_cache_version", CACHE_VERSION);
+				localStorage.setItem("posa_cache_version", String(CACHE_VERSION));
 			}
 			persist("cache_version", CACHE_VERSION);
 		} else {
@@ -138,8 +128,18 @@ export const memoryInitPromise = (async () => {
 		// Mark caches initialized
 		memory.cache_ready = true;
 		persist("cache_ready", true);
+
+		// In Electron mode, register sync-completed listener to refresh data
+		if (isElectron() && window.posAPI.onSyncCompleted) {
+			window.posAPI.onSyncCompleted((result) => {
+				console.log("[sync] Background sync completed:", result);
+				// Invalidate memory items cache so next load fetches fresh from SQLite
+				_storedItems.length = 0;
+				_storedCustomers.length = 0;
+			});
+		}
 	} catch (e) {
-		console.error("Failed to initialize memory from DB", e);
+		console.error("Failed to initialize memory from storage", e);
 	}
 })();
 
@@ -222,72 +222,65 @@ export function clearPricingRulesSnapshot() {
 }
 
 // --- Generic getters and setters for cached data ----------------------------
+// In web mode these use in-memory arrays. The Adapter layer will replace
+// these with Electron IPC calls when running in native mode.
+
+const _storedItems = [];
 
 export async function getStoredItems() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		const items = await db.table("items").toArray();
-		return items;
-	} catch (e) {
-		console.error("Failed to get stored items", e);
-		return [];
+	if (isElectron()) {
+		return window.posAPI.getItems({ limit: 50000 });
 	}
+	return _storedItems;
 }
 
 export async function getStoredItemsCount() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		return await db.table("items").count();
-	} catch (e) {
-		console.error("Failed to count stored items", e);
-		return 0;
+	if (isElectron()) {
+		return window.posAPI.getItemsCount();
 	}
+	return _storedItems.length;
 }
 
 export async function saveItems(items) {
+	if (isElectron()) {
+		// In Electron mode, items are managed by background sync — no-op
+		return;
+	}
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		let cleanItems;
-		try {
-			cleanItems = JSON.parse(JSON.stringify(items));
-		} catch (err) {
-			console.error("Failed to serialize items", err);
-			cleanItems = [];
-		}
-		await db.table("items").bulkPut(cleanItems);
+		const clean = JSON.parse(JSON.stringify(items));
+		_storedItems.length = 0;
+		_storedItems.push(...clean);
 	} catch (e) {
 		console.error("Failed to save items", e);
 	}
 }
 
 export async function clearStoredItems() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		await db.table("items").clear();
-	} catch (e) {
-		console.error("Failed to clear stored items", e);
+	if (isElectron()) {
+		// Items are managed by background sync in Electron
+		return;
 	}
+	_storedItems.length = 0;
 }
 
+const _storedCustomers = [];
+
 export async function getCustomerStorage(limit = Infinity, offset = 0) {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		return await db.table("customers").offset(offset).limit(limit).toArray();
-	} catch (e) {
-		console.error("Failed to get customers from storage", e);
-		return [];
+	if (isElectron()) {
+		const opts = {};
+		if (Number.isFinite(limit) && limit < Infinity) opts.limit = limit;
+		if (offset > 0) opts.offset = offset;
+		return window.posAPI.getCustomers(opts);
 	}
+	return _storedCustomers.slice(offset, offset + limit);
 }
 
 export async function setCustomerStorage(customers) {
+	if (isElectron()) {
+		// Customers are managed by background sync in Electron — no-op
+		return;
+	}
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
 		const clean = customers.map((c) => ({
 			name: c.name,
 			customer_name: c.customer_name,
@@ -297,37 +290,25 @@ export async function setCustomerStorage(customers) {
 			tax_id: c.tax_id,
 			customer_group: c.customer_group,
 		}));
-		const CHUNK_SIZE = 1000;
-		await db.transaction("rw", db.table("customers"), async () => {
-			for (let i = 0; i < clean.length; i += CHUNK_SIZE) {
-				const chunk = clean.slice(i, i + CHUNK_SIZE);
-				await db.table("customers").bulkPut(chunk);
-			}
-		});
+		_storedCustomers.length = 0;
+		_storedCustomers.push(...clean);
 	} catch (e) {
 		console.error("Failed to set customer storage", e);
 	}
 }
 
 export async function getCustomerStorageCount() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		return await db.table("customers").count();
-	} catch (e) {
-		console.error("Failed to count customers", e);
-		return 0;
+	if (isElectron()) {
+		return window.posAPI.getCustomersCount();
 	}
+	return _storedCustomers.length;
 }
 
 export async function clearCustomerStorage() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		await db.table("customers").clear();
-	} catch (e) {
-		console.error("Failed to clear customer storage", e);
+	if (isElectron()) {
+		return;
 	}
+	_storedCustomers.length = 0;
 }
 
 export function getItemsLastSync() {
@@ -560,19 +541,6 @@ export function purgeOldQueueEntries(limit = MAX_QUEUE_ITEMS) {
 }
 
 export async function clearAllCache() {
-	try {
-		await checkDbHealth();
-		terminatePersistWorker();
-		if (db.isOpen()) {
-			await db.close();
-		}
-		await Dexie.delete("posawesome_offline");
-		await db.open();
-		initPersistWorker();
-	} catch (e) {
-		console.error("Failed to clear IndexedDB cache", e);
-	}
-
 	if (typeof localStorage !== "undefined") {
 		Object.keys(localStorage).forEach((key) => {
 			if (key.startsWith("posa_")) {
@@ -612,15 +580,17 @@ export async function clearAllCache() {
 	memory.manual_offline = false;
 	memory.cache_ready = false;
 
+	_storedItems.length = 0;
+	_storedCustomers.length = 0;
+
 	await clearPriceListCache();
 
 	persist("cache_version", CACHE_VERSION);
 	persist("cache_ready", false);
 }
 
-// Faster cache clearing without reopening the database
+// Faster cache clearing
 export async function forceClearAllCache() {
-	terminatePersistWorker();
 	if (typeof localStorage !== "undefined") {
 		Object.keys(localStorage).forEach((key) => {
 			if (key.startsWith("posa_")) {
@@ -661,57 +631,21 @@ export async function forceClearAllCache() {
 	memory.cache_ready = false;
 
 	if (typeof localStorage !== "undefined") {
-		localStorage.setItem("posa_cache_version", CACHE_VERSION);
+		localStorage.setItem("posa_cache_version", String(CACHE_VERSION));
 	}
+
+	_storedItems.length = 0;
+	_storedCustomers.length = 0;
 
 	await clearPriceListCache();
 
-	// Delete the IndexedDB database in the background
-	try {
-		await Dexie.delete("posawesome_offline");
-		await db.open();
-		initPersistWorker();
-	} catch (e) {
-		console.error("Failed to clear IndexedDB cache", e);
-	}
-
 	persist("cache_version", CACHE_VERSION);
 	persist("cache_ready", false);
-}
-
-/**
- * Fallback IndexedDB size estimation by iterating over all records.
- * This is only used when the StorageManager API is not available.
- * @returns {Promise<number>} estimated IndexedDB usage in bytes
- */
-async function estimateIndexedDbSizeFallback() {
-	if (!db.tables || !db.tables.length) {
-		return 0;
-	}
-
-	let total = 0;
-	for (const table of db.tables) {
-		try {
-			await db.transaction("r", db.table(table.name), async () => {
-				await db.table(table.name).each((item) => {
-					try {
-						total += JSON.stringify(item).length * 2;
-					} catch (stringifyErr) {
-						console.warn("Failed to measure IndexedDB entry size", stringifyErr);
-					}
-				});
-			});
-		} catch (tableErr) {
-			console.warn(`Failed to inspect table ${table.name} for cache usage`, tableErr);
-		}
-	}
-
-	return total;
 }
 
 /**
  * Estimates the current cache usage size in bytes and percentage.
- * @returns {Promise<Object>} usage breakdown for localStorage and IndexedDB
+ * @returns {Promise<Object>} usage breakdown for localStorage/SQLite
  */
 export async function getCacheUsageEstimate() {
 	if (cacheUsageEstimatePromise) {
@@ -720,7 +654,17 @@ export async function getCacheUsageEstimate() {
 
 	cacheUsageEstimatePromise = (async () => {
 		try {
-			await checkDbHealth();
+			// In Electron mode, get stats from SQLite
+			if (isElectron()) {
+				const stats = await window.posAPI.getDbStats();
+				return {
+					total: 0,
+					localStorage: 0,
+					sqlite: stats,
+					percentage: 0, // SQLite has no practical limit
+				};
+			}
+
 			let localStorageSize = 0;
 			if (typeof localStorage !== "undefined") {
 				for (let i = 0; i < localStorage.length; i++) {
@@ -732,49 +676,14 @@ export async function getCacheUsageEstimate() {
 				}
 			}
 
-			let totalSize = 0;
-			let indexedDBSize = 0;
-			let maxSize = 50 * 1024 * 1024;
-
-			if (typeof navigator !== "undefined" && navigator.storage && navigator.storage.estimate) {
-				try {
-					const { usage, quota } = await navigator.storage.estimate();
-					if (typeof usage === "number" && usage >= 0) {
-						totalSize = usage;
-						indexedDBSize = Math.max(totalSize - localStorageSize, 0);
-					}
-					if (typeof quota === "number" && quota > 0) {
-						maxSize = quota;
-					}
-				} catch (estimateErr) {
-					console.warn("StorageManager estimate failed", estimateErr);
-				}
-			}
-
-			if (!totalSize) {
-				if (!db.isOpen()) {
-					try {
-						await db.open();
-					} catch (openErr) {
-						console.warn("Failed to open IndexedDB for cache estimation", openErr);
-						return {
-							total: localStorageSize,
-							localStorage: localStorageSize,
-							indexedDB: 0,
-							percentage: Math.min(100, Math.round((localStorageSize / maxSize) * 100)),
-						};
-					}
-				}
-				indexedDBSize = await estimateIndexedDbSizeFallback();
-				totalSize = localStorageSize + indexedDBSize;
-			}
-
-			const usagePercentage = maxSize ? Math.min(100, Math.round((totalSize / maxSize) * 100)) : 0;
+			const maxSize = 5 * 1024 * 1024; // localStorage ~5MB limit
+			const usagePercentage = maxSize
+				? Math.min(100, Math.round((localStorageSize / maxSize) * 100))
+				: 0;
 
 			return {
-				total: totalSize,
+				total: localStorageSize,
 				localStorage: localStorageSize,
-				indexedDB: indexedDBSize,
 				percentage: usagePercentage,
 			};
 		} catch (e) {
@@ -782,7 +691,6 @@ export async function getCacheUsageEstimate() {
 			return {
 				total: 0,
 				localStorage: 0,
-				indexedDB: 0,
 				percentage: 0,
 			};
 		} finally {

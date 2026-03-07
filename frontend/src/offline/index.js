@@ -9,6 +9,7 @@ export {
 	checkDbHealth,
 	initPersistWorker,
 	terminatePersistWorker,
+	isElectron,
 } from "./core.js";
 
 // Cache exports

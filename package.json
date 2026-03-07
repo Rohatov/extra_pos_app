@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "cd frontend && yarn dev",
     "build": "cd frontend && yarn build",
+    "build:ui": "cd frontend && yarn build",
+    "build:exe": "yarn build:ui && electron-builder --win",
     "electron:dev": "electron .",
     "electron:build": "electron-builder",
     "electron:build:linux": "electron-builder --linux",
@@ -15,7 +17,6 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "@vuepic/vue-datepicker": "11.0.2",
     "@vueuse/core": "^13.4.0",
-    "dexie": "^4.0.11",
     "electron-store": "^10.0.1",
     "lodash": "^4.17.21",
     "mitt": "^3.0.1",
@@ -55,43 +56,39 @@
   },
   "build": {
     "appId": "com.posawesome.desktop",
-    "productName": "POS Awesome Desktop",
-    "asar": true,
-    "publish": [],
+    "productName": "POS Offline",
     "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "electron/**/*",
-      "package.json",
-      "yarn.lock",
-      "node_modules/**/*"
-    ],
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ]
+      "output": "dist_electron",
+      "buildResources": "build"
     },
     "win": {
-      "target": [
-        "nsis"
-      ],
-      "artifactName": "POSAwesome-Setup-${version}.${ext}"
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "artifactName": "POSAwesome-${version}.${ext}",
-      "category": "Office"
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
-    "protocols": [
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "files": [
+      "electron/**/*",
+      "!electron/icons/*.png",
+      "electron/icons/icon.png",
+      "electron/icons/icon.ico"
+    ],
+    "extraResources": [
       {
-        "name": "POS Awesome Links",
-        "schemes": [
-          "posawesome"
-        ]
+        "from": "electron/icons",
+        "to": "icons",
+        "filter": ["icon.png", "icon.ico"]
       }
     ]
   },

@@ -47,10 +47,6 @@
 					>{{ __("Total Size") }}: <b>{{ formatBytes(cacheUsageDetails.total) }}</b>
 				</div>
 				<div class="cache-tooltip-detail">
-					<v-icon size="14" color="info" class="mr-1">mdi-database</v-icon>{{ __("IndexedDB") }}:
-					<b>{{ formatBytes(cacheUsageDetails.indexedDB) }}</b>
-				</div>
-				<div class="cache-tooltip-detail">
 					<v-icon size="14" color="info" class="mr-1">mdi-folder</v-icon>{{ __("localStorage") }}:
 					<b>{{ formatBytes(cacheUsageDetails.localStorage) }}</b>
 				</div>
@@ -95,7 +91,6 @@ export default {
 			type: Object,
 			default: () => ({
 				total: 0,
-				indexedDB: 0,
 				localStorage: 0,
 			}),
 		},

@@ -1,11 +1,10 @@
 import { memory } from "./cache.js";
-import { persist, db, checkDbHealth } from "./core.js";
+import { persist, isElectron } from "./core.js";
 
 export function saveItemUOMs(itemCode, uoms) {
 	try {
 		const cache = memory.uom_cache;
-		// Clone to avoid persisting reactive objects which cause
-		// DataCloneError when stored in IndexedDB
+		// Clone to avoid persisting reactive objects
 		let cleanUoms;
 		try {
 			cleanUoms = JSON.parse(JSON.stringify(uoms));
@@ -65,15 +64,17 @@ export function getCachedPriceListNames() {
 	}
 }
 
-// Price list rate storage using dedicated table
+// In-memory price list cache
+const _priceListCache = {};
+
+// Price list rate storage using in-memory cache
 export async function savePriceListItems(priceList, items) {
 	try {
 		if (!priceList) return;
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		const rates = items.map((it) => {
+		const cache = _priceListCache[priceList] || {};
+		items.forEach((it) => {
 			const price = it.price_list_rate ?? it.rate ?? 0;
-			return {
+			cache[it.item_code] = {
 				price_list: priceList,
 				item_code: it.item_code,
 				rate: price,
@@ -81,7 +82,7 @@ export async function savePriceListItems(priceList, items) {
 				timestamp: Date.now(),
 			};
 		});
-		await db.table("item_prices").bulkPut(rates);
+		_priceListCache[priceList] = cache;
 	} catch (e) {
 		console.error("Failed to save price list items", e);
 	}
@@ -90,30 +91,12 @@ export async function savePriceListItems(priceList, items) {
 export async function getCachedPriceListItems(priceList, ttl = 24 * 60 * 60 * 1000) {
 	try {
 		if (!priceList) return null;
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
+		const cache = _priceListCache[priceList];
+		if (!cache) return null;
 		const now = Date.now();
-		const prices = await db.table("item_prices").where("price_list").equals(priceList).toArray();
-		if (!prices.length) return null;
-		const valid = prices.filter((p) => now - p.timestamp < ttl);
+		const valid = Object.values(cache).filter((p) => now - p.timestamp < ttl);
 		if (!valid.length) return null;
-		const itemCodes = valid.map((p) => p.item_code);
-		const items = await db.table("items").where("item_code").anyOf(itemCodes).toArray();
-		const map = new Map(items.map((it) => [it.item_code, it]));
-		const result = valid
-			.map((p) => {
-				const it = map.get(p.item_code);
-				const price = p.price_list_rate ?? p.rate ?? 0;
-				return it
-					? {
-						...it,
-						rate: price,
-						price_list_rate: price,
-					}
-					: null;
-			})
-			.filter(Boolean);
-		return result;
+		return valid;
 	} catch (e) {
 		console.error("Failed to get cached price list items", e);
 		return null;
@@ -122,12 +105,10 @@ export async function getCachedPriceListItems(priceList, ttl = 24 * 60 * 60 * 10
 
 export async function clearPriceListCache(priceList = null) {
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
 		if (priceList) {
-			await db.table("item_prices").where("price_list").equals(priceList).delete();
+			delete _priceListCache[priceList];
 		} else {
-			await db.table("item_prices").clear();
+			Object.keys(_priceListCache).forEach((k) => delete _priceListCache[k]);
 		}
 	} catch (e) {
 		console.error("Failed to clear price list cache", e);
@@ -193,21 +174,6 @@ export async function getCachedItemDetails(profileName, priceList, itemCodes, tt
 			}
 		});
 
-		if (cached.length) {
-			await checkDbHealth();
-			if (!db.isOpen()) await db.open();
-			const baseItems = await db
-				.table("items")
-				.where("item_code")
-				.anyOf(cached.map((it) => it.item_code))
-				.toArray();
-			const map = new Map(baseItems.map((it) => [it.item_code, it]));
-			cached.forEach((det, idx) => {
-				const base = map.get(det.item_code) || {};
-				cached[idx] = { ...base, ...det };
-			});
-		}
-
 		return { cached, missing };
 	} catch (e) {
 		console.error("Failed to get cached item details", e);
@@ -224,12 +190,16 @@ export function clearItemDetailsCache() {
 	}
 }
 
-// Persistent item storage helpers
+// In-memory stored items (used by web mode; Electron adapter bypasses)
+import { getStoredItems as _getFromCache, saveItems as _saveToCache } from "./cache.js";
 
+// Persistent item storage helpers
 export async function saveItemsBulk(items) {
+	if (isElectron()) {
+		// In Electron mode, items come from background sync — no-op for writes
+		return;
+	}
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
 		let cleanItems;
 		try {
 			cleanItems = JSON.parse(JSON.stringify(items));
@@ -252,23 +222,18 @@ export async function saveItemsBulk(items) {
 				? it.batch_no_data.map((b) => b.batch_no).filter(Boolean)
 				: [],
 		}));
-		const CHUNK_SIZE = 1000;
-		await db.transaction("rw", db.table("items"), async () => {
-			for (let i = 0; i < cleanItems.length; i += CHUNK_SIZE) {
-				const chunk = cleanItems.slice(i, i + CHUNK_SIZE);
-				await db.table("items").bulkPut(chunk);
-			}
-		});
+		await _saveToCache(cleanItems);
 	} catch (e) {
 		console.error("Failed to save items", e);
 	}
 }
 
 export async function getAllStoredItems() {
+	if (isElectron()) {
+		return window.posAPI.getItems({ limit: 50000 });
+	}
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		return await db.table("items").toArray();
+		return await _getFromCache();
 	} catch (e) {
 		console.error("Failed to read stored items", e);
 		return [];
@@ -276,35 +241,29 @@ export async function getAllStoredItems() {
 }
 
 export async function searchStoredItems({ search = "", itemGroup = "", limit = 100, offset = 0 } = {}) {
+	if (isElectron()) {
+		return window.posAPI.getItems({
+			search,
+			item_group: itemGroup && itemGroup.toLowerCase() !== "all" ? itemGroup : "",
+			limit,
+			offset,
+		});
+	}
 	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-
+		const allItems = await _getFromCache();
 		const normalizedSearch = String(search || "")
 			.toLowerCase()
 			.trim();
 		const words = Array.from(new Set(normalizedSearch.split(/\s+/).filter(Boolean)));
-		const primaryWord = words.reduce(
-			(longest, word) => (word.length > longest.length ? word : longest),
-			words[0] || "",
-		);
 
 		const matchesAllWords = (item) => {
-			if (!words.length) {
-				return true;
-			}
-
+			if (!words.length) return true;
 			const searchable = [];
 			const pushValue = (value) => {
-				if (value === undefined || value === null) {
-					return;
-				}
+				if (value == null) return;
 				const text = String(value).trim().toLowerCase();
-				if (text) {
-					searchable.push(text);
-				}
+				if (text) searchable.push(text);
 			};
-
 			pushValue(item.item_code);
 			pushValue(item.item_name);
 			pushValue(item.name);
@@ -312,110 +271,34 @@ export async function searchStoredItems({ search = "", itemGroup = "", limit = 1
 			pushValue(item.barcode);
 			pushValue(item.brand);
 			pushValue(item.item_group);
-			pushValue(item.attributes);
-
-			const handleArray = (source, extractor) => {
-				if (!Array.isArray(source)) {
-					return;
-				}
-				source.forEach((entry) => {
-					if (extractor) {
-						pushValue(extractor(entry));
-					} else {
-						pushValue(entry);
-					}
-				});
-			};
-
 			if (Array.isArray(item.item_barcode)) {
-				item.item_barcode.forEach((barcode) => pushValue(barcode && barcode.barcode));
+				item.item_barcode.forEach((b) => pushValue(b && b.barcode));
 			} else {
 				pushValue(item.item_barcode);
 			}
-
-			handleArray(item.barcodes);
-			handleArray(item.name_keywords);
-			handleArray(item.serial_no_data, (serial) => serial && serial.serial_no);
-			handleArray(item.serials);
-			handleArray(item.batch_no_data, (batch) => batch && batch.batch_no);
-			handleArray(item.batches);
-
-			const attributes = item.item_attributes;
-			if (Array.isArray(attributes)) {
-				attributes.forEach((attr) => {
-					if (attr && typeof attr === "object") {
-						pushValue(attr.attribute);
-						pushValue(attr.attribute_value);
-					} else {
-						pushValue(attr);
-					}
-				});
-			} else {
-				pushValue(attributes);
-			}
-
-			if (!searchable.length) {
-				return false;
-			}
-
+			if (Array.isArray(item.barcodes)) item.barcodes.forEach(pushValue);
+			if (Array.isArray(item.name_keywords)) item.name_keywords.forEach(pushValue);
+			if (Array.isArray(item.serial_no_data))
+				item.serial_no_data.forEach((s) => pushValue(s && s.serial_no));
+			if (Array.isArray(item.serials)) item.serials.forEach(pushValue);
+			if (Array.isArray(item.batch_no_data))
+				item.batch_no_data.forEach((b) => pushValue(b && b.batch_no));
+			if (Array.isArray(item.batches)) item.batches.forEach(pushValue);
 			return words.every((word) => searchable.some((field) => field.includes(word)));
 		};
 
-		const applyItemGroupFilter = (collection) => {
-			if (itemGroup && itemGroup.toLowerCase() !== "all") {
-				const group = itemGroup.toLowerCase();
-				return collection.filter((it) => it.item_group && it.item_group.toLowerCase() === group);
-			}
-			return collection;
-		};
+		let results = allItems;
 
-		if (primaryWord) {
-			let collection = db
-				.table("items")
-				.where("item_code")
-				.startsWithIgnoreCase(primaryWord)
-				.or("item_name")
-				.startsWithIgnoreCase(primaryWord)
-				.or("barcodes")
-				.equalsIgnoreCase(primaryWord)
-				.or("name_keywords")
-				.startsWithIgnoreCase(primaryWord)
-				.or("serials")
-				.equalsIgnoreCase(primaryWord)
-				.or("batches")
-				.equalsIgnoreCase(primaryWord);
-
-			collection = applyItemGroupFilter(collection);
-
-			let results = await collection.toArray();
-			results = results.filter(matchesAllWords);
-
-			if (!results.length) {
-				let fallback = applyItemGroupFilter(db.table("items"));
-				results = await fallback.filter(matchesAllWords).toArray();
-			}
-
-			if (!results.length) {
-				return [];
-			}
-
-			const map = new Map();
-			results.forEach((item) => {
-				if (!map.has(item.item_code)) {
-					map.set(item.item_code, item);
-				}
-			});
-
-			const unique = Array.from(map.values());
-			return unique.slice(offset, offset + limit);
+		if (itemGroup && itemGroup.toLowerCase() !== "all") {
+			const group = itemGroup.toLowerCase();
+			results = results.filter((it) => it.item_group && it.item_group.toLowerCase() === group);
 		}
 
-		let collection = applyItemGroupFilter(db.table("items"));
 		if (words.length) {
-			collection = collection.filter(matchesAllWords);
+			results = results.filter(matchesAllWords);
 		}
-		const res = await collection.offset(offset).limit(limit).toArray();
-		return res;
+
+		return results.slice(offset, offset + limit);
 	} catch (e) {
 		console.error("Failed to query stored items", e);
 		return [];
@@ -423,11 +306,6 @@ export async function searchStoredItems({ search = "", itemGroup = "", limit = 1
 }
 
 export async function clearStoredItems() {
-	try {
-		await checkDbHealth();
-		if (!db.isOpen()) await db.open();
-		await db.table("items").clear();
-	} catch (e) {
-		console.error("Failed to clear stored items", e);
-	}
+	const { clearStoredItems: clear } = await import("./cache.js");
+	await clear();
 }

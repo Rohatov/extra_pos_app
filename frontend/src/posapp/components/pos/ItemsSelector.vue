@@ -1028,27 +1028,7 @@ export default {
 			return this.scaleBarcodeSettings;
 		},
 		startItemWorker() {
-			// Avoid spawning duplicate workers which doubles script downloads and background threads
-			if (this.itemWorker || typeof Worker === "undefined") {
-				return;
-			}
-
-			try {
-				// Use the plain URL so the service worker can match the cached file
-				// even when offline. Using a query string causes cache lookups to fail
-				// which results in "Failed to fetch a worker script" errors.
-				const workerUrl = "/assets/posawesome/dist/js/posapp/workers/itemWorker.js";
-				this.itemWorker = new Worker(workerUrl, { type: "classic" });
-				this.itemWorker.onerror = function (event) {
-					console.error("Worker error:", event);
-					console.error("Message:", event.message);
-					console.error("Filename:", event.filename);
-					console.error("Line number:", event.lineno);
-				};
-			} catch (e) {
-				console.error("Failed to start item worker", e);
-				this.itemWorker = null;
-			}
+			// Worker removed — persistence handled by Adapter layer
 		},
 		async ensureScaleBarcodeSettings(force = false) {
 			if (!force && this.scaleBarcodeSettingsLoaded) {

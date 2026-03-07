@@ -1,6 +1,6 @@
 /* global frappe */
 import { memory, resetOfflineState, setLastSyncTotals, MAX_QUEUE_ITEMS, reduceCacheUsage } from "./cache.js";
-import { persist } from "./core.js";
+import { persist, isElectron } from "./core.js";
 import { updateLocalStock } from "./stock.js";
 
 // Flag to avoid concurrent invoice syncs which can cause duplicate submissions
@@ -25,12 +25,21 @@ export function saveOfflineInvoice(entry) {
 		throw new Error("Cart is empty. Add items before saving.");
 	}
 
+	// Electron mode: save to SQLite via IPC
+	if (isElectron()) {
+		const payload = JSON.parse(JSON.stringify(entry.invoice));
+		// Fire-and-forget — posAPI.saveInvoice returns a promise but callers
+		// of saveOfflineInvoice expect synchronous behavior
+		window.posAPI.saveInvoice(payload).catch((err) => {
+			console.error("Failed to save invoice via posAPI", err);
+		});
+		return;
+	}
+
 	const key = "offline_invoices";
 	const entries = memory.offline_invoices;
 	// Clone the entry before storing to strip Vue reactivity
-	// and other non-serializable properties. IndexedDB only
-	// supports structured cloneable data, so reactive proxies
-	// cause a DataCloneError without this step.
+	// and other non-serializable properties.
 	const { offline_created_at, posting_date, posting_time } = getOfflineTimestamp(entry);
 
 	let cleanEntry;
@@ -66,6 +75,12 @@ export function saveOfflineInvoice(entry) {
 }
 
 export function isOffline() {
+	// In Electron mode, we always have local SQLite — never truly "offline"
+	// from the POS perspective. Background sync handles server communication.
+	if (isElectron()) {
+		return memory.manual_offline || false;
+	}
+
 	// Use cached data when running offline
 	if (typeof window === "undefined") {
 		// Not in a browser (SSR/Node), assume online (or handle explicitly if needed)
@@ -109,6 +124,10 @@ export function deleteOfflineInvoice(index) {
 }
 
 export function getPendingOfflineInvoiceCount() {
+	if (isElectron()) {
+		// Return 0 synchronously; background sync handles it in Electron mode
+		return 0;
+	}
 	return memory.offline_invoices.length;
 }
 
@@ -168,8 +187,7 @@ export function getPendingOfflinePaymentCount() {
 export function saveOfflineCustomer(entry) {
 	const key = "offline_customers";
 	const entries = memory.offline_customers;
-	// Serialize to avoid storing reactive objects that IndexedDB
-	// cannot clone.
+	// Serialize to avoid storing reactive objects.
 	let cleanEntry;
 	try {
 		cleanEntry = JSON.parse(JSON.stringify(entry));
@@ -214,6 +232,17 @@ export function clearOfflineCustomers() {
 
 // Add sync function to clear local cache when invoices are successfully synced
 export async function syncOfflineInvoices() {
+	// In Electron mode, sync is handled by background process in main
+	if (isElectron()) {
+		try {
+			const result = await window.posAPI.syncNow();
+			return { pending: 0, synced: result?.invoices?.synced || 0, drafted: 0 };
+		} catch (err) {
+			console.error("Electron sync failed", err);
+			return { pending: 0, synced: 0, drafted: 0 };
+		}
+	}
+
 	// Prevent concurrent syncs which can lead to duplicate submissions
 	if (invoiceSyncInProgress) {
 		return { pending: getPendingOfflineInvoiceCount(), synced: 0, drafted: 0 };

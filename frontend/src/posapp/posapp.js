@@ -1,6 +1,5 @@
 import { createVuetify } from "vuetify";
 import { createApp } from "vue";
-import Dexie from "dexie/dist/dexie.mjs";
 import VueDatePicker from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 import "../../../posawesome/public/css/rtl.css";
@@ -9,7 +8,6 @@ import "./styles/theme.css";
 import eventBus from "./bus";
 import themePlugin from "./plugins/theme.js";
 import { pinia } from "./stores/index.js";
-import "../sw-updater.js"; // Initialize service worker auto-updater
 import * as components from "vuetify/components";
 import * as directives from "vuetify/directives";
 import Home from "./Home.vue";
@@ -49,11 +47,6 @@ function suppressFrappeConnectionAlerts() {
 
 // Call immediately
 suppressFrappeConnectionAlerts();
-
-// Expose Dexie globally for libraries that expect a global Dexie instance
-if (typeof window !== "undefined" && !window.Dexie) {
-	window.Dexie = Dexie;
-}
 
 // Ensure frappe is available
 if (typeof frappe === "undefined") {
@@ -150,26 +143,6 @@ frappe.PosApp.posapp = class {
 
 		if (isPerfEnabled()) {
 			initLongTaskObserver("posapp");
-		}
-
-		if (!document.querySelector('link[rel="manifest"]')) {
-			const link = document.createElement("link");
-			link.rel = "manifest";
-			link.href = "/manifest.json";
-			document.head.appendChild(link);
-		}
-
-		if (
-			("serviceWorker" in navigator && window.location.protocol === "https:") ||
-			window.location.hostname === "localhost" ||
-			window.location.hostname === "127.0.0.1"
-		) {
-			navigator.serviceWorker
-				.register("/sw.js")
-				.then((registration) => {
-					console.log("SW registered successfully", registration);
-				})
-				.catch((err) => console.error("SW registration failed", err));
 		}
 	}
 	setup_header() {}

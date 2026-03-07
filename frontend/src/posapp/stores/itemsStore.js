@@ -360,7 +360,7 @@ export const useItemsStore = defineStore("items", () => {
 				await cacheItems(cacheKey, fetchedItems);
 			}
 
-			// Persist to IndexedDB and kick off background sync when appropriate
+			// Persist to storage and kick off background sync when appropriate
 			if (!searchValue && shouldPersistItems()) {
 				await persistItemsToStorage(fetchedItems, { replaceExisting: forceServer });
 				triggerBackgroundSync({

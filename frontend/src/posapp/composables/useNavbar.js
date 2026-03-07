@@ -15,7 +15,6 @@ export function useNavbar() {
 		loading: false,
 		details: {
 			total: 0,
-			indexedDB: 0,
 			localStorage: 0,
 		},
 	});
@@ -60,7 +59,6 @@ export function useNavbar() {
 			cacheState.usage = usageData.percentage || 0;
 			cacheState.details.total = usageData.total || 0;
 			cacheState.details.localStorage = usageData.localStorage || 0;
-			cacheState.details.indexedDB = usageData.indexedDB || 0;
 		} catch (error) {
 			console.error("Failed to calculate cache usage:", error);
 		} finally {

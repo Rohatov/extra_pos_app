@@ -119,7 +119,7 @@ export default {
 			// Cache data
 			cacheUsage: 0,
 			cacheUsageLoading: false,
-			cacheUsageDetails: { total: 0, indexedDB: 0, localStorage: 0 },
+			cacheUsageDetails: { total: 0, localStorage: 0 },
 
 			// Loading progress handled via utility
 		};
@@ -448,7 +448,6 @@ export default {
 					this.cacheUsage = usage.percentage || 0;
 					this.cacheUsageDetails = {
 						total: usage.total || 0,
-						indexedDB: usage.indexedDB || 0,
 						localStorage: usage.localStorage || 0,
 					};
 				})

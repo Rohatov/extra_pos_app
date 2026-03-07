@@ -204,7 +204,7 @@ export default {
 		},
 		cacheUsageDetails: {
 			type: Object,
-			default: () => ({ total: 0, indexedDB: 0, localStorage: 0 }),
+			default: () => ({ total: 0, localStorage: 0 }),
 		},
 		loadingProgress: {
 			type: Number,

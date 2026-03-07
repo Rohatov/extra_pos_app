@@ -1,13 +1,13 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import {
-	db,
 	checkDbHealth,
 	setCustomerStorage,
 	memoryInitPromise,
 	getCustomersLastSync,
 	setCustomersLastSync,
 	getCustomerStorageCount,
+	getCustomerStorage,
 	clearCustomerStorage,
 	isOffline,
 } from "../../offline/index.js";
@@ -116,9 +116,6 @@ export const useCustomersStore = defineStore("customers", () => {
 	async function ensureDatabase() {
 		await memoryInitPromise;
 		await checkDbHealth();
-		if (!db.isOpen()) {
-			await db.open();
-		}
 	}
 
 	function resetPagination() {
@@ -146,15 +143,14 @@ export const useCustomersStore = defineStore("customers", () => {
 	async function performSearch({ append = false } = {}) {
 		await ensureDatabase();
 
-		let collection = db.table("customers");
+		const allCustomers = await getCustomerStorage();
 		const normalizedTerm = normalizeSearchTerm(searchTerm.value);
+		let filtered = allCustomers;
+
 		if (normalizedTerm) {
 			const searchParts = normalizedTerm.toLowerCase().split(/\s+/).filter(Boolean);
-			collection = collection.filter((customer) => {
-				if (!customer) {
-					return false;
-				}
-
+			filtered = allCustomers.filter((customer) => {
+				if (!customer) return false;
 				const values = [
 					customer.customer_name,
 					customer.name,
@@ -162,19 +158,15 @@ export const useCustomersStore = defineStore("customers", () => {
 					customer.email_id,
 					customer.tax_id,
 				]
-					.filter((value) => value !== null && value !== undefined)
-					.map((value) => String(value).toLowerCase());
-
-				if (!searchParts.length) {
-					return true;
-				}
-
-				return searchParts.every((part) => values.some((value) => value.includes(part)));
+					.filter((v) => v != null)
+					.map((v) => String(v).toLowerCase());
+				if (!searchParts.length) return true;
+				return searchParts.every((part) => values.some((v) => v.includes(part)));
 			});
 		}
 
 		const offset = page.value * PAGE_SIZE;
-		const results = await collection.offset(offset).limit(PAGE_SIZE).toArray();
+		const results = filtered.slice(offset, offset + PAGE_SIZE);
 
 		if (append) {
 			customers.value = [...customers.value, ...results];

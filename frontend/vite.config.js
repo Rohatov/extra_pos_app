@@ -34,23 +34,12 @@ export default defineConfig({
 		viteStaticCopy({
 			targets: [
 				{
-					src: "src/posapp/workers",
-					dest: "posapp",
-				},
-				{
-					src: "src/libs/*",
+					src: "src/libs/opencv.js",
 					dest: "libs",
 				},
 				{
-					src: "src/offline/*",
-					dest: "offline",
-				},
-				{
-					src: "src/sw.js",
-					dest: "../www",
-					transform(contents) {
-						return contents.replace(/__BUILD_VERSION__/g, buildVersion);
-					},
+					src: "src/posapp/workers/opencvWorker.js",
+					dest: "posapp/workers",
 				},
 				{
 					src: "src/loader.js",
