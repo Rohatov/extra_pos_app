@@ -137,10 +137,13 @@ import format from "../../format";
 import {
 	getOpeningDialogStorage,
 	setOpeningDialogStorage,
+	getOpeningStorage,
 	setOpeningStorage,
 	initPromise,
 	checkDbHealth,
+	isElectron,
 } from "../../../offline/index.js";
+import { isOffline } from "../../../offline/sync.js";
 
 export default {
 	mixins: [format],
@@ -233,26 +236,51 @@ export default {
 				}
 			}
 
-			frappe.call({
-				method: "posawesome.posawesome.api.shifts.get_opening_dialog_data",
-				args: {},
-				callback: function (r) {
-					if (r.message) {
-						vm.companies = r.message.companies.map((element) => element.name);
-						vm.pos_profiles_data = r.message.pos_profiles_data;
-						vm.payments_method_data = r.message.payments_method;
-						vm.company = vm.companies[0] || "";
-						try {
-							setOpeningDialogStorage(r.message);
-						} catch (e) {
-							console.error("Failed to cache opening dialog data", e);
-						}
+			// In Electron, also try to derive data from boot config if cache is empty
+			if (isElectron() && !cached) {
+				const bootProfile = frappe.boot?.pos_profile;
+				if (bootProfile && bootProfile.name) {
+					const companyName = bootProfile.company || "";
+					if (companyName) {
+						vm.companies = [companyName];
+						vm.company = companyName;
 					}
-				},
-			});
+					vm.pos_profiles_data = [{ name: bootProfile.name, company: companyName }];
+					vm.pos_profile = bootProfile.name;
+					// Build payment methods from the profile's payments child table
+					if (Array.isArray(bootProfile.payments)) {
+						vm.payments_method_data = bootProfile.payments.map((p) => ({
+							parent: bootProfile.name,
+							mode_of_payment: p.mode_of_payment || p.default,
+							currency: p.currency || frappe.boot?.sysdefaults?.currency || "",
+						}));
+					}
+				}
+			}
+
+			// Fetch fresh data from server (non-blocking — cached/boot data already shown)
+			try {
+				const r = await frappe.call({
+					method: "posawesome.posawesome.api.shifts.get_opening_dialog_data",
+					args: {},
+				});
+				if (r && r.message) {
+					vm.companies = r.message.companies.map((element) => element.name);
+					vm.pos_profiles_data = r.message.pos_profiles_data;
+					vm.payments_method_data = r.message.payments_method;
+					vm.company = vm.companies[0] || "";
+					try {
+						setOpeningDialogStorage(r.message);
+					} catch (e) {
+						console.error("Failed to cache opening dialog data", e);
+					}
+				}
+			} catch (err) {
+				console.warn("[OpeningDialog] Server fetch failed, using cached/boot data:", err.message);
+			}
 		},
 
-		submit_dialog() {
+		async submit_dialog() {
 			if (!this.payments_methods.length || !this.company || !this.pos_profile) {
 				return;
 			}
@@ -260,25 +288,46 @@ export default {
 			this.is_loading = true;
 			const vm = this;
 
-			return frappe
-				.call("posawesome.posawesome.api.shifts.create_opening_voucher", {
+			try {
+				const r = await frappe.call("posawesome.posawesome.api.shifts.create_opening_voucher", {
 					pos_profile: this.pos_profile,
 					company: this.company,
 					balance_details: this.payments_methods,
-				})
-				.then((r) => {
-					if (r.message) {
-						vm.eventBus.emit("register_pos_data", r.message);
-						vm.eventBus.emit("set_company", r.message.company);
-						try {
-							setOpeningStorage(r.message);
-						} catch (e) {
-							console.error("Failed to cache opening data", e);
-						}
-						vm.close_opening_dialog();
-						vm.is_loading = false;
-					}
 				});
+				if (r && r.message) {
+					vm.eventBus.emit("register_pos_data", r.message);
+					vm.eventBus.emit("set_company", r.message.company);
+					try {
+						setOpeningStorage(r.message);
+					} catch (e) {
+						console.error("Failed to cache opening data", e);
+					}
+					vm.close_opening_dialog();
+					vm.is_loading = false;
+					return;
+				}
+			} catch (err) {
+				console.warn("[OpeningDialog] Server submit failed:", err.message);
+			}
+
+			// Offline fallback: build a local-only opening shift so POS can proceed
+			const profileData = this.pos_profiles_data.find((p) => p.name === this.pos_profile) || {};
+			const localShift = {
+				pos_profile: profileData.name ? profileData : { name: this.pos_profile, company: this.company },
+				pos_opening_shift: { name: `offline-shift-${Date.now()}`, status: "Open" },
+				company: { name: this.company, default_currency: frappe.boot?.sysdefaults?.currency || "" },
+				period_start_date: frappe.datetime.now_datetime(),
+				balance_details: this.payments_methods,
+			};
+			vm.eventBus.emit("register_pos_data", localShift);
+			vm.eventBus.emit("set_company", localShift.company);
+			try {
+				setOpeningStorage(localShift);
+			} catch (e) {
+				console.error("Failed to cache local opening data", e);
+			}
+			vm.close_opening_dialog();
+			vm.is_loading = false;
 		},
 
 		go_desk() {

@@ -59,6 +59,21 @@ frappe.PosApp.posapp = class {
 	constructor({ parent }) {
 		this.$parent = $(document);
 		this.page = parent?.page || parent;
+
+		// Block web browser access — POS is strictly for Electron desktop
+		if (!window.posAPI) {
+			const mount = document.querySelector(".main-section") || document.body;
+			mount.innerHTML = `
+				<div style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#101828;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;flex-direction:column;gap:24px;text-align:center;padding:32px;">
+					<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+					<h1 style="margin:0;font-size:28px;font-weight:700;color:#fff;">Desktop Application Required</h1>
+					<p style="margin:0;font-size:16px;max-width:480px;line-height:1.6;color:#94a3b8;">This POS is strictly for Windows. Please use the Desktop Application.</p>
+					<p style="margin:0;font-size:13px;color:#475569;">Web browser access is disabled for security and data integrity.</p>
+				</div>
+			`;
+			return;
+		}
+
 		this.make_body();
 	}
 	make_body() {

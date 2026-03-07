@@ -138,6 +138,22 @@ export const memoryInitPromise = (async () => {
 				_storedCustomers.length = 0;
 			});
 		}
+
+		// In Electron mode, hydrate critical keys from SQLite settings
+		// (localStorage may be empty on first boot after install)
+		if (isElectron() && window.posAPI.getSetting) {
+			const sqliteKeys = ["pos_opening_storage", "opening_dialog_storage"];
+			for (const key of sqliteKeys) {
+				if (!memory[key]) {
+					try {
+						const raw = await window.posAPI.getSetting(key);
+						if (raw) {
+							memory[key] = JSON.parse(raw);
+						}
+					} catch (_) {}
+				}
+			}
+		}
 	} catch (e) {
 		console.error("Failed to initialize memory from storage", e);
 	}
@@ -385,6 +401,10 @@ export function setOpeningStorage(data) {
 		}
 		memory.pos_opening_storage = clean;
 		persist("pos_opening_storage", memory.pos_opening_storage);
+		// Electron: also write to SQLite for cross-restart persistence
+		if (isElectron()) {
+			window.posAPI.setSetting?.("pos_opening_storage", JSON.stringify(clean))?.catch?.(() => {});
+		}
 	} catch (e) {
 		console.error("Failed to set opening storage", e);
 	}
@@ -414,6 +434,10 @@ export function setOpeningDialogStorage(data) {
 		}
 		memory.opening_dialog_storage = clean;
 		persist("opening_dialog_storage", memory.opening_dialog_storage);
+		// Electron: also write to SQLite for cross-restart persistence
+		if (isElectron()) {
+			window.posAPI.setSetting?.("opening_dialog_storage", JSON.stringify(clean))?.catch?.(() => {});
+		}
 	} catch (e) {
 		console.error("Failed to set opening dialog storage", e);
 	}

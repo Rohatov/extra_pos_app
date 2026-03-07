@@ -574,24 +574,38 @@ ipcMain.handle("get-boot-config", async () => {
 
 			// Resolve the POS profile
 			if (posProfile) {
-				config.pos_profile = typeof posProfile === "string" && posProfile.startsWith("{")
-					? JSON.parse(posProfile)
-					: { name: posProfile };
-			} else {
-				// Try to get active POS profile from server
-				try {
-					const profileResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
-						method: "POST",
-						endpoint: "/api/method/posawesome.posawesome.api.utils.get_active_pos_profile",
-						body: { user: config.user },
-					});
-					if (profileResult.message) {
-						config.pos_profile = profileResult.message;
-						store.set("posProfile", config.pos_profile.name || "");
-					}
-				} catch (_) {
-					// No profile — user will need to set one
+				// Check if we have a full cached profile in SQLite settings
+				const cachedProfile = posDb.getSetting("pos_profile_full");
+				if (cachedProfile) {
+					try {
+						const parsed = JSON.parse(cachedProfile);
+						if (parsed.name === posProfile || parsed.name === posProfile.replace(/^"|"$/g, "")) {
+							config.pos_profile = parsed;
+						}
+					} catch (_) {}
 				}
+				if (!config.pos_profile) {
+					config.pos_profile = typeof posProfile === "string" && posProfile.startsWith("{")
+						? JSON.parse(posProfile)
+						: { name: posProfile };
+				}
+			}
+
+			// Try to get full POS profile from server (to update cache)
+			try {
+				const profileResult = await posDb.erpRequest(baseUrl, apiKey, apiSecret, {
+					method: "POST",
+					endpoint: "/api/method/posawesome.posawesome.api.utils.get_active_pos_profile",
+					body: { user: config.user },
+				});
+				if (profileResult.message) {
+					config.pos_profile = profileResult.message;
+					store.set("posProfile", config.pos_profile.name || "");
+					// Cache the full profile for offline use
+					posDb.setSetting("pos_profile_full", JSON.stringify(profileResult.message));
+				}
+			} catch (_) {
+				// Offline — use cached profile from above
 			}
 
 			// Get website settings (logo etc.)
@@ -620,8 +634,32 @@ ipcMain.handle("get-boot-config", async () => {
 			}
 		} catch (err) {
 			console.error("[boot] Failed to load boot config from server:", err.message);
-			// Return minimal config — app will work in offline mode
+			// Offline fallback: load cached boot config from SQLite
+			const cachedBoot = posDb.getSetting("boot_config_cache");
+			if (cachedBoot) {
+				try {
+					const cached = JSON.parse(cachedBoot);
+					config.user = cached.user || "";
+					config.user_fullname = cached.user_fullname || "";
+					config.pos_profile = cached.pos_profile || config.pos_profile;
+					config.sysdefaults = cached.sysdefaults || {};
+					config.lang = cached.lang || "en";
+					config.user_defaults = cached.user_defaults || {};
+					config.website_settings = cached.website_settings || {};
+					config.translations = cached.translations || {};
+					console.log("[boot] Loaded cached boot config for offline use");
+				} catch (_) {
+					console.warn("[boot] Failed to parse cached boot config");
+				}
+			}
 		}
+	}
+
+	// Cache the boot config for offline use (only if we got user data from server)
+	if (config.user) {
+		try {
+			posDb.setSetting("boot_config_cache", JSON.stringify(config));
+		} catch (_) {}
 	}
 
 	return config;
