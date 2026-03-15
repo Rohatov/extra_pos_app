@@ -350,6 +350,7 @@ def get_serials(warehouse: Optional[str], item_codes: Sequence[str], ttl: Option
 @dataclass(frozen=True)
 class ItemLookupData:
     price_map: Dict[str, Dict[str, frappe._dict]]
+    alternative_price_map: Dict[str, Dict[str, frappe._dict]]
     stock_map: Dict[str, float]
     meta_map: Dict[str, frappe._dict]
     uom_map: Dict[str, List[Dict[str, Any]]]
@@ -407,6 +408,9 @@ def merge_item_row(
     price_row = _select_price(
         lookup_data.price_map.get(item_code, {}), item.get("uom"), meta.get("stock_uom")
     )
+    alternative_price_row = _select_price(
+        lookup_data.alternative_price_map.get(item_code, {}), item.get("uom"), meta.get("stock_uom")
+    )
     price_currency = price_row.get("currency") if price_row else None
 
     row = dict(item)
@@ -422,6 +426,7 @@ def merge_item_row(
             "serial_no_data": lookup_data.serial_map.get(item_code, []),
             "rate": price_row.get("price_list_rate") if price_row else 0,
             "price_list_rate": price_row.get("price_list_rate") if price_row else 0,
+            "alternative_rate": alternative_price_row.get("price_list_rate") if alternative_price_row else 0,
             "currency": price_currency or price_list_currency,
             "price_list_currency": price_list_currency,
             "plc_conversion_rate": exchange_rate,
@@ -525,6 +530,28 @@ class ItemDetailAggregator:
                     self.today,
                 )
 
+        alternative_price_rows = []
+        alt_price_list = self.pos_profile.get("posa_alternative_price_list")
+        if alt_price_list:
+            alt_currency = frappe.db.get_value("Price List", alt_price_list, "currency")
+            if use_cache:
+                alternative_price_rows = get_item_prices(
+                    alt_price_list,
+                    alt_currency or self.pos_profile.get("currency"),
+                    item_codes_tuple,
+                    self.customer,
+                    today=self.today,
+                    ttl=self.cache_ttl,
+                )
+            else:
+                alternative_price_rows = _fetch_item_prices(
+                    alt_price_list,
+                    alt_currency or self.pos_profile.get("currency"),
+                    item_codes_tuple,
+                    self.customer or "",
+                    self.today,
+                )
+
         # Stock, metadata, UOM and barcode data are reused both for batches and the
         # final merged item rows, so collect them up front.
         if use_cache:
@@ -555,6 +582,10 @@ class ItemDetailAggregator:
         price_map: Dict[str, Dict[str, frappe._dict]] = {}
         for row in price_rows:
             price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
+
+        alternative_price_map: Dict[str, Dict[str, frappe._dict]] = {}
+        for row in alternative_price_rows:
+            alternative_price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
 
         # Fallback: if the selected price list differs from the POS profile default,
         # fetch prices from the default price list for items that have no price in the
@@ -626,6 +657,7 @@ class ItemDetailAggregator:
 
         return ItemLookupData(
             price_map=price_map,
+            alternative_price_map=alternative_price_map,
             stock_map=stock_map,
             meta_map=meta_map,
             uom_map=uom_map,

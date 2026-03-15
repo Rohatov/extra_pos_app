@@ -56,6 +56,52 @@ def expand_item_groups(item_groups):
 
 
 @frappe.whitelist()
+def get_offline_data(company, price_list):
+    """Return taxes and pricing rules for offline sync."""
+    taxes = frappe.get_all(
+        "Sales Taxes and Charges Template",
+        filters={"company": company, "disabled": 0},
+        fields=["name", "title", "is_default"]
+    )
+    
+    # Get details for each tax template
+    for t in taxes:
+        t.taxes = frappe.get_doc("Sales Taxes and Charges Template", t.name).taxes
+        
+    from posawesome.posawesome.api.pricing_rules import get_active_pricing_rules
+    pricing_rules = get_active_pricing_rules(company=company, price_list=price_list)
+    
+    return {
+        "taxes": taxes,
+        "pricing_rules": pricing_rules
+    }
+
+@frappe.whitelist()
+def get_translations(lang):
+    from frappe.translate import get_all_translations
+    return get_all_translations(lang)
+
+@frappe.whitelist()
+def get_api_keys():
+    """Return API key and secret for the current user, generating them if necessary."""
+    user = frappe.get_doc("User", frappe.session.user)
+    if not user.api_key:
+        user.api_key = frappe.generate_hash(length=15)
+        user.save(ignore_permissions=True)
+    
+    # Try to get existing secret, if not found, generate one
+    api_secret = user.get_password("api_secret")
+    if not api_secret:
+        api_secret = frappe.generate_hash(length=15)
+        user.api_secret = api_secret
+        user.save(ignore_permissions=True)
+    
+    return {
+        "api_key": user.api_key,
+        "api_secret": api_secret
+    }
+
+@frappe.whitelist()
 def get_active_pos_profile(user=None):
     """Return the active POS profile for the given user."""
     user = user or frappe.session.user
