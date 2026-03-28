@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	retryLoad: () => ipcRenderer.invoke("retry-load"),
 	openSettings: () => ipcRenderer.invoke("open-settings"),
 	probeServer: () => ipcRenderer.invoke("probe-server"),
+	validateConnection: () => ipcRenderer.invoke("validate-connection"),
 	resetServer: () => ipcRenderer.invoke("reset-server"),
 	getConfig: () => ipcRenderer.invoke("get-config"),
 	saveConfig: (config) => ipcRenderer.invoke("save-config", config),

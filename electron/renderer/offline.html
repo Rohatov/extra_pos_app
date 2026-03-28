@@ -4,6 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>POS Awesome Offline</title>
+		<script src="./bridge-init.js"></script>
 		<style>
 			:root {
 				color-scheme: light dark;
@@ -110,9 +111,14 @@
 		</div>
 		<script>
 			const serverLabel = document.getElementById("server-label");
-			window.electronAPI.getServerUrl().then((saved) => {
-				serverLabel.textContent = saved ? `Last saved server: ${saved}` : "No server URL is set.";
-			});
+			window._desktopBridgeReady
+				.then(() => window.electronAPI.getServerUrl())
+				.then((saved) => {
+					serverLabel.textContent = saved ? `Last saved server: ${saved}` : "No server URL is set.";
+				})
+				.catch(() => {
+					serverLabel.textContent = "No server URL is set.";
+				});
 
 			document.getElementById("retry").addEventListener("click", async () => {
 				const result = await window.electronAPI.retryLoad();

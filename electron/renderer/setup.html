@@ -4,6 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>POS Awesome Desktop</title>
+		<script src="./bridge-init.js"></script>
 		<style>
 			:root {
 				color-scheme: light dark;
@@ -213,6 +214,7 @@
 
 			async function hydrate() {
 				try {
+					await window._desktopBridgeReady;
 					const config = await window.posAPI.getConfig();
 					if (config.serverUrl) inputUrl.value = config.serverUrl;
 					if (config.apiKey) inputKey.value = config.apiKey;
@@ -249,7 +251,24 @@
 						posProfile: inputProfile.value.trim(),
 						priceList: inputPriceList.value.trim(),
 					});
-					setStatus("Configuration saved. Launching POS...");
+
+					const probe = await window.electronAPI.probeServer();
+					if (!probe?.reachable) {
+						setStatus("Server offline. Opening offline mode...", "success");
+						await window.posAPI.loadPosPage();
+						return;
+					}
+
+					if (window.electronAPI.validateConnection) {
+						setStatus("Validating connection...");
+						const validation = await window.electronAPI.validateConnection();
+						if (!validation?.ok) {
+							setStatus(validation?.message || "Connection validation failed", "error");
+							return;
+						}
+					}
+
+					setStatus("Configuration saved. Launching POS...", "success");
 					await window.posAPI.loadPosPage();
 				} catch (error) {
 					setStatus(error?.message || "Failed to save configuration", "error");
@@ -278,6 +297,19 @@
 					});
 					const probe = await window.electronAPI.probeServer();
 					if (probe.reachable) {
+						if (window.electronAPI.validateConnection) {
+							const validation = await window.electronAPI.validateConnection();
+							if (validation?.ok) {
+								setStatus(
+									`Connected as ${validation.user || "user"}${validation.posProfile ? ` | ${validation.posProfile}` : ""}`,
+									"success"
+								);
+								return;
+							}
+							setStatus(validation?.message || "Connection validation failed", "error");
+							return;
+						}
+
 						setStatus("Connection successful! Server is reachable.", "success");
 					} else {
 						setStatus("Cannot reach server: " + (probe.message || "Unknown error"), "error");

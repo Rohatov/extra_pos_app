@@ -11,6 +11,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@mdi/font": "6.9.96",
     "@techstark/opencv-js": "^4.11.0-release.1",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vuepic/vue-datepicker": "11.0.2",

@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src *; img-src * data: blob:; media-src 'self' blob:; font-src 'self' data:;">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' qrc: file:; connect-src *; img-src * data: blob:; media-src 'self' blob:; font-src 'self' data:;">
 	<title>POS Awesome</title>
 	<style>
 		/* Loading screen */
@@ -24,6 +24,7 @@
 	</style>
 	<!-- POS Awesome CSS (built by vite) -->
 	<link rel="stylesheet" href="../dist/posawesome.css" />
+	<script src="./bridge-init.js"></script>
 </head>
 <body>
 	<!-- Loading indicator -->
@@ -44,6 +45,9 @@
 			const statusEl = document.getElementById("load-status");
 
 			try {
+				statusEl.textContent = "Preparing desktop bridge...";
+				await window._desktopBridgeReady;
+
 				statusEl.textContent = "Loading configuration...";
 				await window._frappeShimReady;
 

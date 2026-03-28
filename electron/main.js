@@ -218,6 +218,76 @@ async function probeServer() {
 	});
 }
 
+async function validateConnection() {
+	await ensureStoreReady();
+	const serverUrl = store.get("serverUrl", "");
+	const apiKey = store.get("apiKey", "");
+	const apiSecret = store.get("apiSecret", "");
+	const configuredProfile = store.get("posProfile", "");
+	const configuredPriceList = store.get("priceList", "");
+
+	if (!serverUrl) {
+		return { ok: false, message: "Server URL kiritilmagan" };
+	}
+
+	if (!apiKey || !apiSecret) {
+		return { ok: false, message: "API Key va API Secret kiriting" };
+	}
+
+	const probe = await probeServer();
+	if (!probe?.reachable) {
+		return {
+			ok: false,
+			offline: true,
+			message: probe?.message || "Server bilan aloqa yo'q",
+		};
+	}
+
+	try {
+		const userResult = await posDb.erpRequest(serverUrl, apiKey, apiSecret, {
+			method: "GET",
+			endpoint: "/api/method/frappe.auth.get_logged_user",
+		});
+		const user = userResult?.message || "";
+		if (!user) {
+			return { ok: false, message: "Login muvaffaqiyatsiz" };
+		}
+
+		let profile = null;
+		try {
+			const profileResult = await posDb.erpRequest(serverUrl, apiKey, apiSecret, {
+				method: "POST",
+				endpoint: "/api/method/posawesome.posawesome.api.utils.get_active_pos_profile",
+				body: { user },
+			});
+			if (profileResult?.message) {
+				profile = profileResult.message;
+				store.set("posProfile", profile.name || configuredProfile || "");
+				if (profile.selling_price_list) {
+					store.set("priceList", profile.selling_price_list);
+				}
+				posDb.setSetting("pos_profile_full", JSON.stringify(profile));
+			}
+		} catch (_) {
+			// fall back to configured profile below
+		}
+
+		if (!profile && !configuredProfile) {
+			return { ok: false, message: "POS Profile topilmadi yoki ruxsat yo'q" };
+		}
+
+		return {
+			ok: true,
+			message: "Connection confirmed",
+			user,
+			posProfile: profile?.name || configuredProfile || "",
+			priceList: profile?.selling_price_list || configuredPriceList || "",
+		};
+	} catch (error) {
+		return { ok: false, message: error.message || "Connection validation failed" };
+	}
+}
+
 app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") {
 		app.quit();
@@ -293,6 +363,8 @@ ipcMain.handle("open-settings", () => {
 });
 
 ipcMain.handle("probe-server", async () => probeServer());
+
+ipcMain.handle("validate-connection", async () => validateConnection());
 
 ipcMain.handle("reset-server", async () => {
 	await ensureStoreReady();

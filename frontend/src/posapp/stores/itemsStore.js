@@ -296,6 +296,17 @@ export const useItemsStore = defineStore("items", () => {
 						? resolveLimitSearchSize()
 						: null;
 
+			// In desktop/offline-first mode prefer the persisted SQLite catalog for
+			// initial item loads instead of immediately hitting the server again.
+			if (!forceServer && !searchValue && shouldPersistItems()) {
+				await loadCachedItems();
+				if (Array.isArray(items.value) && items.value.length > 0) {
+					performanceMetrics.value.cachedRequests++;
+					updatePerformanceMetrics(startTime);
+					return items.value;
+				}
+			}
+
 			// Check cache first unless forced to server or limit search requires fresh data
 			const canReadFromCache = !forceServer && !limitSearchEnabled.value;
 
@@ -380,6 +391,17 @@ export const useItemsStore = defineStore("items", () => {
 		} catch (error) {
 			if (error.name !== "AbortError") {
 				console.error("Failed to load items:", error);
+
+				// If the server is unreachable but local desktop storage already has
+				// items, fall back to SQLite so the POS remains usable offline.
+				if (!forceServer && shouldPersistItems()) {
+					await loadCachedItems();
+					if (Array.isArray(items.value) && items.value.length > 0) {
+						updatePerformanceMetrics(startTime);
+						return items.value;
+					}
+				}
+
 				throw error;
 			}
 		} finally {

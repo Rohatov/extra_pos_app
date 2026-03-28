@@ -1,6 +1,7 @@
 import { createVuetify } from "vuetify";
 import { createApp } from "vue";
 import VueDatePicker from "@vuepic/vue-datepicker";
+import "@mdi/font/css/materialdesignicons.min.css";
 import "@vuepic/vue-datepicker/dist/main.css";
 import "../../../posawesome/public/css/rtl.css";
 import "../style.css";
