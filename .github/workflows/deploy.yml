@@ -19,11 +19,10 @@
 name: Deploy to Production
 
 # Qachon ishga tushadi
+# MUHIM: avto-deploy O'CHIRILGAN — server qo'lda yangilanadi (git pull +
+# bench migrate). Kerak bo'lsa Actions sahifasidan qo'lda ishga tushiriladi.
 on:
-  push:
-    branches:
-      - main              # main branch ga push bo'lganda
-  workflow_dispatch:      # Manual trigger ham mumkin
+  workflow_dispatch:      # Faqat manual trigger
 
 # Environment variables (GitHub Secrets dan olinadi)
 env:
