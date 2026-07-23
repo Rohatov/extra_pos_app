@@ -551,6 +551,50 @@ def validate_return_items(original_invoice_name, return_items, doctype="Sales In
 
 
 @frappe.whitelist()
+def _reapply_client_payments(invoice_doc, client_payments):
+    """Klient (POS Desktop) yuborgan to'lov summalarini invoice'ga qaytarish.
+
+    ERPNext `update_multi_mode_option` yangi POS invoice'da payments jadvalini
+    profil rejimlaridan 0 summa bilan qayta quradi; mode uchun default account
+    topilmasa qator umuman qo'shilmaydi. Bu funksiya klient yuborgan
+    mode_of_payment/amount juftliklarini mavjud qatorlarga o'rnatadi,
+    yetishmayotgan rejimlarni account bilan qo'shib beradi.
+    """
+    if not client_payments or not cint(invoice_doc.get("is_pos")):
+        return
+
+    existing = {}
+    for row in invoice_doc.get("payments") or []:
+        if row.mode_of_payment:
+            existing[row.mode_of_payment] = row
+
+    for cp in client_payments:
+        mop = (cp.get("mode_of_payment") or "").strip()
+        if not mop:
+            continue
+        amount = flt(cp.get("amount"))
+        row = existing.get(mop)
+        if row is not None:
+            row.amount = amount
+            continue
+        account = None
+        try:
+            account = (get_bank_cash_account(mop, invoice_doc.company) or {}).get("account")
+        except Exception:
+            account = None
+        if not account:
+            account = frappe.get_cached_value("Company", invoice_doc.company, "default_cash_account")
+        invoice_doc.append(
+            "payments",
+            {
+                "mode_of_payment": mop,
+                "amount": amount,
+                "type": frappe.db.get_value("Mode of Payment", mop, "type") or "Cash",
+                "account": account,
+            },
+        )
+
+
 def update_invoice(data):
     currency_cache = {}
     data = json.loads(data)
@@ -651,6 +695,13 @@ def update_invoice(data):
 
     # Remove duplicate taxes from item and profile templates
     _merge_duplicate_taxes(invoice_doc)
+
+    # POS Desktop bitta chaqiruvda tayyor to'lovlar bilan keladi, lekin
+    # set_missing_values -> set_pos_fields -> update_multi_mode_option
+    # klient yuborgan to'lov summalarini 0 bilan almashtiradi (mode uchun
+    # account topilmasa qatorni umuman tashlab yuboradi). Natijada har bir
+    # sotuv "Unpaid" bo'lib qolardi. Klient summalarini qayta o'rnatamiz.
+    _reapply_client_payments(invoice_doc, data.get("payments") or [])
 
     if locked_items:
         for item in invoice_doc.items:
@@ -971,6 +1022,20 @@ def submit_invoice(invoice, data, submit_in_background=False):
         "POS Profile", pos_profile, "create_pos_invoice_instead_of_sales_invoice"
     ):
         doctype = "POS Invoice"
+
+    # Idempotency: klient timeout olib qayta yuborsa (oflayn navbat), bitta
+    # chek ikki marta yaratilmasin. posa_offline_id unique maydon.
+    offline_id = (invoice.get("posa_offline_id") or "").strip()
+    if offline_id and doctype == "Sales Invoice":
+        existing_name = frappe.db.get_value(
+            doctype, {"posa_offline_id": offline_id, "docstatus": ("<", 2)}, "name"
+        )
+        if existing_name:
+            existing_docstatus = cint(frappe.db.get_value(doctype, existing_name, "docstatus"))
+            if existing_docstatus == 1:
+                return {"name": existing_name, "status": 1}
+            # Qoralama qolgan bo'lsa — o'sha hujjat bilan davom etamiz.
+            invoice["name"] = existing_name
 
     invoice_name = invoice.get("name")
     if not invoice_name or not frappe.db.exists(doctype, invoice_name):

@@ -8,15 +8,7 @@ frappe.ui.form.on("POS Profile", {
 				filters: { type: "Cash" },
 			};
 		});
-
-		frappe.call({
-			method: "posawesome.posawesome.api.utilities.get_language_options",
-			callback: function (r) {
-				if (!r.exc) {
-					frm.fields_dict["posa_language"].df.options = r.message;
-					frm.refresh_field("posa_language");
-				}
-			},
-		});
+		// posa_language maydoni olib tashlangan (desktop POS o'z tiliga ega) —
+		// unga tegishli kod ham olib tashlandi.
 	},
 });

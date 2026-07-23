@@ -59,6 +59,12 @@ def get_opening_dialog_data():
 @frappe.whitelist()
 def create_opening_voucher(pos_profile, company, balance_details):
     balance_details = json.loads(balance_details)
+    # Eski klientlar "opening_amount" kaliti bilan yuboradi — doctype maydoni
+    # esa "amount". Normalizatsiya qilamiz, aks holda boshlang'ich summa 0
+    # bo'lib yozilardi.
+    for row in balance_details or []:
+        if isinstance(row, dict) and not row.get("amount") and row.get("opening_amount"):
+            row["amount"] = row.get("opening_amount")
 
     new_pos_opening = frappe.get_doc(
         {
