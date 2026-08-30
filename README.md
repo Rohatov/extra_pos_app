@@ -214,3 +214,4 @@ GNU/General Public License (see [license.txt](LICENSE.md))
 
 The Suviner POS code is licensed as GNU General Public License (v3)
 # suviner_pos
+# suviner-pos
