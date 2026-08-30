@@ -3,9 +3,9 @@
 *.egg-info
 *.swp
 tags
-posawesome/docs/current
+suviner_pos/docs/current
 node_modules
-posawesome/public/dist
+suviner_pos/public/dist
 # ignore Vue single-file component styles generated during build
 **/*.vue.css
 /dist

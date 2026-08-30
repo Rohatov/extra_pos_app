@@ -6,16 +6,16 @@ with open("requirements.txt") as f:
         if line.strip() and not line.strip().startswith("#")
     ]
 
-# get version from __version__ variable in posawesome/__init__.py
+# get version from __version__ variable in suviner_pos/__init__.py
 import re
 
-with open("posawesome/__init__.py") as f:
+with open("suviner_pos/__init__.py") as f:
     version = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', f.read()).group(1)
 
 setup(
-    name="posawesome",
+    name="suviner_pos",
     version=version,
-    description="POS Awesome",
+    description="Suviner POS",
     author="Youssef Restom",
     author_email="youssef@totrox.com",
     packages=find_packages(),

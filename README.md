@@ -1,6 +1,6 @@
 <div align="center">
     <img src="https://frappecloud.com/files/pos.png" height="128">
-    <h2>POS AWESOME</h2>
+    <h2>SUVINER POS</h2>
 </div>
 
 #### An open-source Point of Sale for [Erpnext](https://github.com/frappe/erpnext) using [Vue.js](https://github.com/vuejs/vue) and [Vuetify](https://github.com/vuetifyjs/vuetify) (VERSION 15 and 16 Support)
@@ -9,22 +9,22 @@
 
 ### Quick Start
 
-Follow these steps to install and start using POS Awesome:
+Follow these steps to install and start using Suviner POS:
 
 1. **Install the app** in your bench:
-    1. `bench get-app https://github.com/defendicon/POS-Awesome-V15`
+    1. `bench get-app https://github.com/sar552/suviner-pos`
     2. `bench setup requirements`
-    3. `bench build --app posawesome`
+    3. `bench build --app suviner_pos`
     4. `bench restart`
-    5. `bench --site your.site.name install-app posawesome`
+    5. `bench --site your.site.name install-app suviner_pos`
     6. `bench --site your.site.name migrate`
 
-2. **Open the POS Awesome workspace**
+2. **Open the Suviner POS workspace**
 
-    Log in to ERPNext, go to the home page, and click **POS Awesome** from the left-hand menu.
+    Log in to ERPNext, go to the home page, and click **Suviner POS** from the left-hand menu.
 
 3. **Create a POS Profile**
-    - Navigate to **POS Awesome → POS Profile → New**.
+    - Navigate to **Suviner POS → POS Profile → New**.
     - Fill in the mandatory fields:
         - **Name** – any label for this profile.
         - **Company** – the company under which transactions will be recorded.
@@ -37,9 +37,9 @@ Follow these steps to install and start using POS Awesome:
 
 5. **Start selling**
 
-    Return to the **POS Awesome** workspace and launch the POS. Select the newly created profile if prompted and begin creating invoices.
+    Return to the **Suviner POS** workspace and launch the POS. Select the newly created profile if prompted and begin creating invoices.
 
-For more details, see the [POS Awesome Wiki](https://github.com/yrestom/POS-Awesome/wiki).
+For more details, see the [Suviner POS Wiki](https://github.com/sar552/suviner-pos/wiki).
 
 ---
 
@@ -47,11 +47,11 @@ For more details, see the [POS Awesome Wiki](https://github.com/yrestom/POS-Awes
 
 After switching branches or pulling latest changes:
 
-1. cd apps/posawesome
+1. cd apps/suviner_pos
 2. git pull
 3. yarn install
 4. cd ../..
-5. bench build --app posawesome
+5. bench build --app suviner_pos
 6. bench --site your.site migrate
 
 Go to developer tools in browser, then go to application tab, then go to storage and clear site data.
@@ -210,7 +210,7 @@ These commands will rewrite files in-place so the CI checks pass.
 
 ### License
 
-GNU/General Public License (see [license.txt](https://github.com/yrestom/POS-Awesome/blob/master/license.txt))
+GNU/General Public License (see [license.txt](LICENSE.md))
 
-The POS Awesome code is licensed as GNU General Public License (v3)
-# posawesome
+The Suviner POS code is licensed as GNU General Public License (v3)
+# suviner_pos

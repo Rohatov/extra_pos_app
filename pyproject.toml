@@ -1,5 +1,5 @@
 [project]
-name = "posawesome"
+name = "suviner_pos"
 authors = [
     { name = "Youssef Restom", email = "youssef@totrox.com"},
     { name = "Abdul Manan", email="defendicon@github.com"},
@@ -8,7 +8,7 @@ authors = [
     { name = "Ahmed Osama", email = "eng.ahmed.osama.1190@gmail.com"},
     { name = "Samarth Upare", email = "samarth.upare@redtra.com"},
 ]
-description = "POS project that's simply awesome"
+description = "Suviner POS backend (POS Awesome fork)"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
@@ -68,6 +68,6 @@ target-version = ["py310"]
 
 
 [project.urls]
-Homepage = "https://github.com/defendicon/POS-Awesome-V15"
-Repository = "https://github.com/defendicon/POS-Awesome-V15.git"
-"Bug Reports" = "https://github.com/defendicon/POS-Awesome-V15/issues"
+Homepage = "https://github.com/sar552/suviner-pos"
+Repository = "https://github.com/sar552/suviner-pos.git"
+"Bug Reports" = "https://github.com/sar552/suviner-pos/issues"

@@ -1,8 +1,8 @@
-# Claude Code Configuration for POSAwesome
+# Claude Code Configuration for Suviner POS
 
 ## About This Project
 
-POSAwesome is a Frappe application - a Point of Sale (POS) system built on the Frappe Framework. This is a full-stack web application with Python backend and Vue.js frontend components.
+Suviner POS is a Frappe application - a Point of Sale (POS) system built on the Frappe Framework. This is a full-stack web application with Python backend and Vue.js frontend components.
 
 **Enhanced Camera Scanner**: Features advanced OpenCV-based image processing for superior barcode and QR code scanning with real-time image enhancement.
 
@@ -11,11 +11,11 @@ POSAwesome is a Frappe application - a Point of Sale (POS) system built on the F
 ### Main Build Commands
 ```bash
 # Build frontend assets for production
-bench build --app posawesome
+bench build --app suviner_pos
 
 
 # Force rebuild (cleans cache first)
-bench build --app posawesome --force
+bench build --app suviner_pos --force
 
 # Build all apps in the bench
 bench build
@@ -33,7 +33,7 @@ bench start --port 8000
 ## Project Structure
 
 ```
-posawesome/
+suviner_pos/
 ├── frontend/                 # Vue.js frontend
 │   ├── src/
 │   │   ├── posapp/
@@ -41,9 +41,9 @@ posawesome/
 │   │   │   └── pages/        # Vue pages
 │   │   └── main.js           # Frontend entry point
 │   └── package.json          # Frontend dependencies
-├── posawesome/               # Python backend
+├── suviner_pos/               # Python backend
 │   ├── public/               # Static assets
-│   ├── posawesome/           # Main module
+│   ├── suviner_pos/           # Main module
 │   │   ├── doctype/         # DocType definitions
 │   │   ├── api/             # API endpoints
 │   │   └── hooks.py         # App hooks
@@ -59,7 +59,7 @@ posawesome/
 bench new-site mysite.local
 
 # Install app on site
-bench --site mysite.local install-app posawesome
+bench --site mysite.local install-app suviner_pos
 
 # Migrate database
 bench --site mysite.local migrate
@@ -78,7 +78,7 @@ bench migrate
 
 # Reload specific doctype
 bench --site mysite.local console
->>> frappe.reload_doc('posawesome', 'doctype', 'pos_invoice')
+>>> frappe.reload_doc('suviner_pos', 'doctype', 'pos_invoice')
 
 # Clear cache
 bench --site mysite.local clear-cache
@@ -87,10 +87,10 @@ bench --site mysite.local clear-cache
 ### Code Quality & Testing
 ```bash
 # Run tests
-bench --site mysite.local run-tests --app posawesome
+bench --site mysite.local run-tests --app suviner_pos
 
 # Run specific module tests
-bench --site mysite.local run-tests --module posawesome.tests.test_pos
+bench --site mysite.local run-tests --module suviner_pos.tests.test_pos
 
 # Check Python syntax issues
 cd ~/frappe-bench/sites
@@ -107,7 +107,7 @@ cd ~/frappe-bench/sites
 
 ### Asset Building
 - Uses Vite as build tool
-- Automatic compilation on `bench build --app posawesome`
+- Automatic compilation on `bench build --app suviner_pos`
 - Watch mode available with `--dev` flag
 
 ### Styling
@@ -139,19 +139,19 @@ from frappe.utils import cint, flt, getdate, today
 
 ### API Development
 ```python
-# In posawesome/api/pos.py
+# In suviner_pos/api/pos.py
 @frappe.whitelist()
 def get_pos_data():
     return frappe.get_list("POS Invoice", limit=10)
 ```
 
 ### Hooks Configuration
-Located in `posawesome/hooks.py`:
+Located in `suviner_pos/hooks.py`:
 ```python
 # Document events
 doc_events = {
     "POS Invoice": {
-        "on_submit": "posawesome.api.pos.on_pos_invoice_submit"
+        "on_submit": "suviner_pos.api.pos.on_pos_invoice_submit"
     }
 }
 ```
@@ -161,8 +161,8 @@ doc_events = {
 ### Working with Forks
 ```bash
 # Add your fork as remote
-cd apps/posawesome
-git remote add origin https://github.com/[username]/posawesome
+cd apps/suviner_pos
+git remote add origin https://github.com/[username]/suviner_pos
 
 # Create feature branch
 git checkout -b feature/my-new-feature
@@ -178,7 +178,7 @@ git push origin feature/my-new-feature
 ### Staying Updated
 ```bash
 # Add upstream remote (original repo)
-git remote add upstream https://github.com/yrestom/POS-Awesome
+git remote add upstream https://github.com/sar552/posawesome
 
 # Pull latest changes
 git pull upstream develop
@@ -227,7 +227,7 @@ bench list-apps --format json
 
 ```bash
 # Production build
-bench build --app posawesome
+bench build --app suviner_pos
 
 # Setup production
 bench setup production
@@ -236,7 +236,7 @@ bench setup production
 bench restart
 
 # Update app
-bench update --app posawesome
+bench update --app suviner_pos
 ```
 
 ## Useful Frappe APIs
@@ -261,6 +261,6 @@ _("Text to translate")
 ## Configuration Notes
 
 - This project uses the new esbuild-based build system (Frappe v14+)
-- Frontend assets are compiled to `posawesome/public/dist/`
+- Frontend assets are compiled to `suviner_pos/public/dist/`
 - Development mode enables auto-reloading and debugging features
 - Production builds are optimized and minified
