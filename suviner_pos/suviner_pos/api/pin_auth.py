@@ -60,16 +60,26 @@ def _is_dummy(value: str) -> bool:
 # ──────────────────────────────────────────────────────────────────────
 #  Yordamchilar
 # ──────────────────────────────────────────────────────────────────────
-def _profile_rows(pos_profile: str):
-    if not pos_profile or not frappe.db.exists("POS Profile", pos_profile):
-        frappe.throw(_("POS Profile {0} not found").format(pos_profile))
-    if cint(frappe.db.get_value("POS Profile", pos_profile, "disabled")):
-        frappe.throw(_("POS Profile {0} is disabled").format(pos_profile))
+def _profile_rows(pos_profile: str | None = None):
+    """POS Profile User qatorlari. `pos_profile` berilmasa — barcha YOQILGAN
+    profillardagi qatorlar (qurilma profilga bog'lanmaydi, kassir qaysi
+    profilda bo'lsa o'sha bilan ishlaydi)."""
+    pos_profile = (pos_profile or "").strip()
+    if pos_profile:
+        if not frappe.db.exists("POS Profile", pos_profile):
+            frappe.throw(_("POS Profile {0} not found").format(pos_profile))
+        if cint(frappe.db.get_value("POS Profile", pos_profile, "disabled")):
+            frappe.throw(_("POS Profile {0} is disabled").format(pos_profile))
+        profiles = [pos_profile]
+    else:
+        profiles = [p.name for p in frappe.get_all("POS Profile", filters={"disabled": 0}, fields=["name"])]
+    if not profiles:
+        return []
     return frappe.get_all(
         "POS Profile User",
-        filters={"parent": pos_profile, "parenttype": "POS Profile"},
-        fields=["name", "user", "default", "idx"],
-        order_by="idx asc",
+        filters={"parent": ("in", profiles), "parenttype": "POS Profile"},
+        fields=["name", "user", "default", "idx", "parent as pos_profile"],
+        order_by="parent asc, idx asc",
     )
 
 
@@ -140,16 +150,18 @@ def _get_or_create_api_keys(user: str) -> tuple[str, str]:
 # ──────────────────────────────────────────────────────────────────────
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=120, seconds=60)
-def get_pin_login_users(pos_profile: str):
-    """Profildagi (Applicable for Users) yoqilgan userlar ro'yxati.
+def get_pin_login_users(pos_profile: str | None = None):
+    """Applicable for Users dagi yoqilgan userlar ro'yxati.
 
-    Faqat login ekraniga kerak bo'lgan maydonlar qaytadi: user id, ism,
-    rasm, PIN o'rnatilganmi, default belgisi.
+    `pos_profile` berilmasa barcha yoqilgan profillar; bir user bir nechta
+    profilda bo'lsa bitta qator (PIN qo'yilgan profil afzal). Faqat login
+    ekraniga kerak maydonlar: user id, ism, rasm, PIN bor-yo'qligi, default,
+    profil nomi.
     """
     rows = _profile_rows(pos_profile)
     if not rows:
         return []
-    users = [r.user for r in rows]
+    users = list({r.user for r in rows})
     details = {
         d.name: d
         for d in frappe.get_all(
@@ -158,28 +170,35 @@ def get_pin_login_users(pos_profile: str):
             fields=["name", "full_name", "user_image"],
         )
     }
-    result = []
+    merged = {}
     for r in rows:
         d = details.get(r.user)
         if not d:
             continue
         has_pin = bool(get_decrypted_password("POS Profile User", r.name, "posa_pin", raise_exception=False))
-        result.append(
-            {
+        entry = merged.get(r.user)
+        if entry is None or (has_pin and not entry["has_pin"]):
+            merged[r.user] = {
                 "user": r.user,
                 "full_name": d.full_name or r.user,
                 "user_image": d.user_image,
                 "has_pin": int(has_pin),
                 "default": cint(r.default),
+                "pos_profile": r.pos_profile,
             }
-        )
-    return result
+        elif entry is not None and cint(r.default) and not entry["default"]:
+            entry["default"] = 1
+    return list(merged.values())
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(key="user", limit=30, seconds=60)
-def pin_login(pos_profile: str, user: str, pin: str):
+def pin_login(user: str, pin: str, pos_profile: str | None = None):
     """PINni tekshiradi; to'g'ri bo'lsa userning API kalitini qaytaradi.
+
+    `pos_profile` berilmasa user kiritilgan barcha yoqilgan profillar
+    tekshiriladi — PIN qaysi profil qatoriga mos kelsa o'sha profil
+    qaytariladi (bir user bir nechta do'konda turli PIN bilan bo'lishi mumkin).
 
     Xato PIN: {ok: 0, remaining_attempts: n} yoki qulf: {ok: 0, locked: 1,
     lock_seconds: s}. Muvaffaqiyat: {ok: 1, user, full_name, api_key,
@@ -194,7 +213,7 @@ def pin_login(pos_profile: str, user: str, pin: str):
 
     rows = [r for r in _profile_rows(pos_profile) if r.user == user]
     if not rows:
-        frappe.throw(_("User {0} is not allowed for POS Profile {1}").format(user, pos_profile))
+        frappe.throw(_("User {0} is not in any enabled POS Profile (Applicable for Users)").format(user))
     if not cint(frappe.db.get_value("User", user, "enabled")):
         frappe.throw(_("User {0} is disabled").format(user))
 
@@ -202,11 +221,20 @@ def pin_login(pos_profile: str, user: str, pin: str):
     if remaining_lock:
         return {"ok": 0, "locked": 1, "lock_seconds": remaining_lock}
 
-    stored_pin = get_decrypted_password("POS Profile User", rows[0].name, "posa_pin", raise_exception=False)
-    if not stored_pin:
-        frappe.throw(_("PIN is not set for user {0} in POS Profile {1}").format(user, pos_profile))
+    stored = []
+    for r in rows:
+        value = get_decrypted_password("POS Profile User", r.name, "posa_pin", raise_exception=False)
+        if value:
+            stored.append((r, str(value).strip()))
+    if not stored:
+        frappe.throw(_("PIN is not set for user {0} (POS Profile -> Applicable for Users)").format(user))
 
-    if not hmac.compare_digest(str(stored_pin).strip(), pin):
+    matched = None
+    for r, value in stored:
+        if hmac.compare_digest(value, pin):
+            matched = r
+            break
+    if matched is None:
         remaining = _register_failure(user)
         if remaining <= 0:
             return {"ok": 0, "locked": 1, "lock_seconds": LOCK_SECONDS}
@@ -222,5 +250,5 @@ def pin_login(pos_profile: str, user: str, pin: str):
         "full_name": full_name,
         "api_key": api_key,
         "api_secret": api_secret,
-        "pos_profile": pos_profile,
+        "pos_profile": matched.pos_profile,
     }
