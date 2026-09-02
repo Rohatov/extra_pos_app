@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import frappe
-from erpnext.setup.utils import get_exchange_rate
+from suviner_pos.suviner_pos.api.exchange_rates import get_latest_rate
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Sum
 from frappe.utils import flt, nowdate
@@ -492,13 +492,14 @@ class ItemDetailAggregator:
             and price_list_currency != company_currency
             and allow_multi_currency
         ):
-            try:
-                return get_exchange_rate(price_list_currency, company_currency, self.today)
-            except Exception:
-                frappe.log_error(
-                    f"Missing exchange rate from {price_list_currency} to {company_currency}",
-                    "Suviner POS",
-                )
+            # Faqat bazadagi eng oxirgi Currency Exchange yozuvi (tashqi API yo'q)
+            rate = get_latest_rate(price_list_currency, company_currency)[0]
+            if rate:
+                return rate
+            frappe.log_error(
+                f"Missing exchange rate from {price_list_currency} to {company_currency}",
+                "Suviner POS",
+            )
         return 1
 
     def _prepare_lookup(self, item_codes: Iterable[str]) -> ItemLookupData:

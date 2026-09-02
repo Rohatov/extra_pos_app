@@ -947,11 +947,11 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 
         exchange_rate = 1
         if price_list_currency != company_currency and allow_multi_currency:
-            from erpnext.setup.utils import get_exchange_rate
+            # Faqat bazadagi eng oxirgi Currency Exchange yozuvi (tashqi API yo'q)
+            from suviner_pos.suviner_pos.api.exchange_rates import get_latest_rate
 
-            try:
-                exchange_rate = get_exchange_rate(price_list_currency, company_currency, today)
-            except Exception:
+            exchange_rate = get_latest_rate(price_list_currency, company_currency)[0] or 1
+            if exchange_rate == 1:
                 frappe.log_error(
                     f"Missing exchange rate from {price_list_currency} to {company_currency}",
                     "Suviner POS",

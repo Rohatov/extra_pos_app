@@ -102,6 +102,10 @@ doc_events = {
         "validate": "suviner_pos.suviner_pos.api.customer.validate",
         "after_insert": "suviner_pos.suviner_pos.api.customer.after_insert",
     },
+    # PIN bilan kirish: Applicable for Users jadvalidagi PIN 4 ta raqam bo'lsin
+    "POS Profile": {
+        "validate": "suviner_pos.suviner_pos.api.pin_auth.validate_pos_profile_pins",
+    },
 }
 
 # Scheduled Tasks
@@ -236,6 +240,7 @@ fixtures = [
                     "POS Profile-posa_use_limit_search",
                     "POS Profile-posa_use_pos_awesome_payments",
                     "POS Profile-posa_use_server_cache",
+                    "POS Profile User-posa_pin",
                     "POS Settings-posa_enable_return_validity",
                     "POS Settings-posa_return_validity_days",
                     "Sales Invoice Item-name_overridden",
@@ -266,6 +271,7 @@ fixtures = [
                     "Sales Order-posa_coupons",
                     "Sales Order-posa_notes",
                     "Sales Order-posa_offers",
+                    "Warehouse-posa_show_in_pos",
                 ),
             ]
         ],

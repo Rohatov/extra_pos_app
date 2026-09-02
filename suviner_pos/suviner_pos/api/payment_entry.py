@@ -9,7 +9,7 @@ from erpnext.accounts.utils import get_account_currency
 from erpnext.accounts.doctype.journal_entry.journal_entry import (
     get_default_bank_cash_account,
 )
-from erpnext.setup.utils import get_exchange_rate
+from suviner_pos.suviner_pos.api.exchange_rates import get_latest_rate_or_throw
 from erpnext.accounts.doctype.bank_account.bank_account import get_party_bank_account
 from suviner_pos.suviner_pos.api.m_pesa import submit_mpesa_payment
 from erpnext.accounts.utils import (
@@ -34,42 +34,76 @@ def create_payment_entry(
     cost_center=None,
     submit=0,
 ):
+    """Mijozdan qarz to'lovi (Payment Entry, Receive).
+
+    `amount` — `currency` valyutasidagi summa. Ikki holat qo'llanadi:
+
+    * `currency` == kassa (Mode of Payment hisobi) valyutasi — kassir
+      haqiqatda olgan pul (masalan UZS). Qarz (Debtors) valyutasi boshqa
+      bo'lsa (USD) paid_amount bazadagi eng oxirgi kurs bilan hisoblanadi.
+    * `currency` == Debtors (party account) valyutasi — summa qarz
+      valyutasida berilgan, kassaga tushadigan summa kurs bilan chiqariladi.
+
+    Kurslar FAQAT Currency Exchange yozuvlaridan (exchange_rates.py) —
+    ERPNext `set_exchange_rate` tashqi API'ga murojaat qilmasligi uchun
+    source/target kurslar bu yerda aniq o'rnatiladi. `exchange_rate`
+    parametri moslik uchun qoldirilgan, e'tiborga olinmaydi.
+    """
     date = nowdate() if not posting_date else posting_date
     party_type = "Customer"
+    payment_type = "Receive"
 
-    # Cache commonly used values
     company_doc = frappe.get_cached_doc("Company", company)
     company_currency = company_doc.default_currency
     letter_head = company_doc.default_letter_head
 
-    # Get party account and currency in one call
     party_account = get_party_account(party_type, customer, company)
     party_account_currency = get_account_currency(party_account)
 
-    if party_account_currency != currency:
+    bank = get_bank_cash_account(company, mode_of_payment)
+    if not bank or not bank.get("account"):
+        frappe.throw(
+            _("Mode of Payment {0} has no account for company {1}").format(mode_of_payment, company)
+        )
+    bank_currency = bank.account_currency or get_account_currency(bank.account)
+
+    currency = (currency or "").strip() or bank_currency
+    amount = flt(amount)
+    if amount <= 0:
+        frappe.throw(_("Payment amount must be greater than zero"))
+
+    rate_cache = {}
+    # Kompaniya valyutasiga kurslar (Payment Entry semantikasi):
+    #   source_exchange_rate: paid_from (Debtors) valyutasi -> kompaniya
+    #   target_exchange_rate: paid_to (kassa) valyutasi -> kompaniya
+    source_exchange_rate = get_latest_rate_or_throw(party_account_currency, company_currency, rate_cache)
+    target_exchange_rate = get_latest_rate_or_throw(bank_currency, company_currency, rate_cache)
+
+    pe = frappe.new_doc("Payment Entry")
+    paid_precision = pe.precision("paid_amount") or 2
+    received_precision = pe.precision("received_amount") or 2
+
+    if currency == bank_currency:
+        received_amount = flt(amount, received_precision)
+        if party_account_currency == bank_currency:
+            paid_amount = received_amount
+        else:
+            # Kassa -> kompaniya -> Debtors. base_received bilan bir xil
+            # formulada hisoblanadi, shuning uchun difference_amount = 0.
+            paid_amount = flt(received_amount * target_exchange_rate / source_exchange_rate, paid_precision)
+    elif currency == party_account_currency:
+        paid_amount = flt(amount, paid_precision)
+        received_amount = flt(paid_amount * source_exchange_rate / target_exchange_rate, received_precision)
+    else:
         frappe.throw(
             _(
-                "Currency is not correct, party account currency is {party_account_currency} and transaction currency is {currency}"
-            ).format(party_account_currency=party_account_currency, currency=currency)
+                "Payment currency {0} must match either the party account currency ({1}) or the payment account currency ({2})"
+            ).format(currency, party_account_currency, bank_currency)
         )
-    payment_type = "Receive"
 
-    # Get bank details in one call
-    bank = get_bank_cash_account(company, mode_of_payment)
+    if paid_amount <= 0:
+        frappe.throw(_("Payment amount is too small after currency conversion"))
 
-    # Get exchange rate
-    if exchange_rate and flt(exchange_rate) > 0:
-        conversion_rate = flt(exchange_rate)
-    else:
-        conversion_rate = get_exchange_rate(currency, company_currency, date, "for_selling")
-
-    # Calculate amounts
-    paid_amount, received_amount = set_paid_amount_and_received_amount(
-        party_account_currency, bank, amount, payment_type, None, conversion_rate
-    )
-
-    # Create payment entry with minimal db calls
-    pe = frappe.new_doc("Payment Entry")
     pe.payment_type = payment_type
     pe.company = company
     pe.cost_center = cost_center or erpnext.get_default_cost_center(company)
@@ -77,39 +111,32 @@ def create_payment_entry(
     pe.mode_of_payment = mode_of_payment
     pe.party_type = party_type
     pe.party = customer
-    pe.paid_from = party_account if payment_type == "Receive" else bank.account
-    pe.paid_to = party_account if payment_type == "Pay" else bank.account
-    pe.paid_from_account_currency = (
-        party_account_currency if payment_type == "Receive" else bank.account_currency
-    )
-    pe.paid_to_account_currency = party_account_currency if payment_type == "Pay" else bank.account_currency
+    pe.paid_from = party_account
+    pe.paid_to = bank.account
+    pe.paid_from_account_currency = party_account_currency
+    pe.paid_to_account_currency = bank_currency
     pe.paid_amount = paid_amount
     pe.received_amount = received_amount
+    pe.source_exchange_rate = source_exchange_rate
+    pe.target_exchange_rate = target_exchange_rate
     pe.letter_head = letter_head
     pe.reference_date = reference_date
     pe.reference_no = reference_no
 
-    # Set bank account if available
     if pe.party_type in ["Customer", "Supplier"]:
         bank_account = get_party_bank_account(pe.party_type, pe.party)
         if bank_account:
             pe.bank_account = bank_account
             pe.set_bank_account_data()
 
-    # Set required fields
     pe.setup_party_account_field()
     pe.set_missing_values()
+    # set_missing_values/set_exchange_rate faqat bo'sh kurslarni to'ldiradi —
+    # baribir bizniki turishini kafolatlaymiz.
+    pe.source_exchange_rate = source_exchange_rate
+    pe.target_exchange_rate = target_exchange_rate
+    pe.set_amounts()
 
-    if exchange_rate and flt(exchange_rate) > 0:
-        pe.source_exchange_rate = flt(exchange_rate)
-        pe.target_exchange_rate = flt(exchange_rate)
-        frappe.logger().info(f"Set custom exchange rate: {exchange_rate}")
-
-
-    if party_account and bank:
-        pe.set_amounts()
-
-    # Insert and submit in one go if needed
     pe.insert(ignore_permissions=True)
     if submit:
         pe.submit()
@@ -213,11 +240,18 @@ def get_outstanding_invoices(customer=None, company=None, currency=None, pos_pro
             order_by="posting_date desc",
         )
 
-        # Ensure all amounts are properly formatted
+        # Ensure all amounts are properly formatted.
+        # DIQQAT: Sales Invoice.outstanding_amount har doim PARTY ACCOUNT
+        # (Debtors) valyutasida — chek UZSda bo'lsa ham qarz USDda turadi.
+        # Klient ko'rsatish/hisoblash uchun `outstanding_currency`ni oladi.
+        party_account_currency = get_account_currency(party_account) if party_account else None
         for invoice in outstanding_invoices:
             invoice.outstanding_amount = flt(invoice.outstanding_amount)
             invoice.invoice_amount = flt(invoice.invoice_amount)
             invoice.voucher_type = "Sales Invoice"
+            invoice.outstanding_currency = (
+                invoice.party_account_currency or party_account_currency or invoice.currency
+            )
 
         # === JOURNAL ENTRY LOGIC (Keep your corrected version from previous fix) ===
         journal_entries = []
@@ -323,6 +357,7 @@ def get_outstanding_invoices(customer=None, company=None, currency=None, pos_pro
                                 "due_date": totals["posting_date"],
                                 "posting_date": totals["posting_date"],
                                 "currency": totals["currency"],
+                                "outstanding_currency": totals["currency"],
                                 "pos_profile": None,
                                 "customer": customer,
                                 "customer_name": customer_name,
@@ -347,7 +382,14 @@ def get_outstanding_invoices(customer=None, company=None, currency=None, pos_pro
 
 
 @frappe.whitelist()
-def get_unallocated_payments(customer, company, currency, mode_of_payment=None):
+def get_unallocated_payments(customer, company, currency=None, mode_of_payment=None):
+    # Avanslar Debtors (party account) valyutasida turadi — klient kassa
+    # valyutasini (UZS) yuborsa ham qarz USDda bo'lishi mumkin. Valyuta
+    # berilmasa (yoki mos kelmasa) party account valyutasi olinadi.
+    party_account = get_party_account("Customer", customer, company)
+    party_account_currency = get_account_currency(party_account) if party_account else None
+    if not currency or (party_account_currency and currency != party_account_currency):
+        currency = party_account_currency or currency
     filters = {
         "party": customer,
         "company": company,
@@ -1072,10 +1114,12 @@ def process_pos_payment(payload):
                 if not amount:
                     continue
                 mode_of_payment = payment_method.get("mode_of_payment")
+                # Har bir to'lov usuli o'z valyutasida kelishi mumkin (UZS
+                # kassa, USD kassa); berilmasa umumiy `currency`.
                 payment_entry = create_payment_entry(
                     company=company,
                     customer=customer,
-                    currency=currency,
+                    currency=payment_method.get("currency") or currency,
                     amount=amount,
                     mode_of_payment=mode_of_payment,
                     exchange_rate=data.get("exchange_rate"),
@@ -1086,7 +1130,10 @@ def process_pos_payment(payload):
                     submit=0,
                 )
 
-                remaining_amount = amount
+                # Taqsimlash Debtors (party account) valyutasida: invoice
+                # outstanding_amount ham, PE.paid_amount ham shu valyutada.
+                # `amount` esa kassa valyutasida bo'lishi mumkin (UZS).
+                remaining_amount = flt(payment_entry.paid_amount)
                 allocated_amount = 0
                 for inv in remaining_invoices:
                     if remaining_amount <= 0:

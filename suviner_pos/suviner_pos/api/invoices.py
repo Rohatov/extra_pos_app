@@ -7,7 +7,6 @@ import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 from erpnext.accounts.party import get_party_account
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-from erpnext.setup.utils import get_exchange_rate
 from erpnext.stock.doctype.batch.batch import (
     get_batch_no,
     get_batch_qty,
@@ -20,12 +19,15 @@ from frappe.utils import (
     flt,
     formatdate,
     getdate,
-    money_in_words,
     nowdate,
     strip_html_tags,
 )
 from frappe.utils.background_jobs import enqueue
 
+from suviner_pos.suviner_pos.api.exchange_rates import (  # noqa: F401 (re-export)
+    get_latest_rate,
+    get_latest_rate_or_throw,
+)
 from suviner_pos.suviner_pos.api.payments import (
     redeeming_customer_credit,
 )  # Updated import
@@ -483,32 +485,6 @@ def validate_cart_items(items, pos_profile=None):
     return errors
 
 
-def get_latest_rate(from_currency: str, to_currency: str, cache=None):
-    """Return the most recent Currency Exchange rate and its date."""
-    if cache is not None:
-        key = (from_currency, to_currency)
-        if key in cache:
-            return cache[key]
-
-    rate_doc = frappe.get_all(
-        "Currency Exchange",
-        filters={"from_currency": from_currency, "to_currency": to_currency},
-        fields=["exchange_rate", "date"],
-        order_by="date desc, creation desc",
-        limit=1,
-    )
-    if rate_doc:
-        result = flt(rate_doc[0].exchange_rate), rate_doc[0].date
-    else:
-        rate = get_exchange_rate(from_currency, to_currency, nowdate())
-        result = flt(rate), nowdate()
-
-    if cache is not None:
-        cache[key] = result
-
-    return result
-
-
 @frappe.whitelist()
 def validate_return_items(original_invoice_name, return_items, doctype="Sales Invoice"):
     """
@@ -659,10 +635,65 @@ def update_invoice(data):
     if effective_price_list:
         invoice_doc.selling_price_list = effective_price_list
 
-    selected_currency = data.get("currency")
-    price_list_currency = data.get("price_list_currency")
-    if not price_list_currency and invoice_doc.get("selling_price_list"):
+    # ── Valyuta va kurslar ───────────────────────────────────────────────
+    # Model: chek POS (kassa) valyutasida — masalan UZS; kompaniya va Debtors
+    # (mijoz qarzi) valyutasi boshqa bo'lishi mumkin — masalan USD; tovar
+    # narx-ro'yxati esa uchinchi/ikkinchi valyutada (USD). ERPNext buni
+    # o'zi qo'llaydi: `conversion_rate` (chek -> kompaniya) va
+    # `plc_conversion_rate` (narx-ro'yxati -> kompaniya) berilsa, base_*
+    # summalar, Debtors'dagi USD qarz va UZS kassa GL yozuvlari to'g'ri
+    # hisoblanadi.
+    #
+    # MUHIM: kurslar set_missing_values() dan OLDIN o'rnatiladi — aks holda
+    # ERPNext `set_price_list_currency` ichida o'zi `get_exchange_rate`
+    # chaqirib, yozuv topilmasa TASHQI API kursini olib kelardi. Kurs faqat
+    # bazadagi eng oxirgi Currency Exchange yozuvidan (exchange_rates.py).
+    company_currency = frappe.get_cached_value("Company", invoice_doc.company, "default_currency")
+    selected_currency = (data.get("currency") or invoice_doc.get("currency") or company_currency).strip()
+    price_list_currency = None
+    if invoice_doc.get("selling_price_list"):
         price_list_currency = frappe.db.get_value("Price List", invoice_doc.selling_price_list, "currency")
+    price_list_currency = price_list_currency or data.get("price_list_currency") or company_currency
+
+    conversion_rate = 1.0
+    plc_conversion_rate = 1.0
+    exchange_rate_date = invoice_doc.get("posting_date") or nowdate()
+    if selected_currency != company_currency:
+        conversion_rate, exchange_rate_date = get_latest_rate(
+            selected_currency, company_currency, cache=currency_cache
+        )
+        if not conversion_rate:
+            frappe.throw(
+                _(
+                    "Unable to find exchange rate for {0} to {1}. Please create a Currency Exchange record manually"
+                ).format(selected_currency, company_currency)
+            )
+    if price_list_currency != company_currency:
+        plc_conversion_rate = get_latest_rate_or_throw(
+            price_list_currency, company_currency, cache=currency_cache
+        )
+
+    # Qaytarish (credit note) asl chek bilan BIR XIL kursda bo'lishi shart —
+    # aks holda kurs o'zgargan bo'lsa mijozning USD qarzida "qoldiq" qoladi.
+    if invoice_doc.get("is_return") and invoice_doc.get("return_against"):
+        orig = frappe.db.get_value(
+            invoice_doc.doctype,
+            invoice_doc.return_against,
+            ["currency", "conversion_rate", "price_list_currency", "plc_conversion_rate"],
+            as_dict=True,
+        )
+        if orig and orig.currency == selected_currency and flt(orig.conversion_rate):
+            conversion_rate = flt(orig.conversion_rate)
+            if orig.price_list_currency == price_list_currency and flt(orig.plc_conversion_rate):
+                plc_conversion_rate = flt(orig.plc_conversion_rate)
+
+    def _apply_currency_fields():
+        invoice_doc.currency = selected_currency
+        invoice_doc.conversion_rate = conversion_rate
+        invoice_doc.price_list_currency = price_list_currency
+        invoice_doc.plc_conversion_rate = plc_conversion_rate
+
+    _apply_currency_fields()
 
     # Preserve provided item names for manual overrides
     overrides = {d.idx: {"item_name": d.item_name} for d in invoice_doc.items}
@@ -715,81 +746,17 @@ def update_invoice(data):
                 item.update(locked)
         invoice_doc.calculate_taxes_and_totals()
 
-    # Ensure selected currency is preserved after set_missing_values
-    if selected_currency:
-        invoice_doc.currency = selected_currency
-        company_currency = frappe.get_cached_value("Company", invoice_doc.company, "default_currency")
-    price_list_currency = price_list_currency or company_currency
+    # set_missing_values (set_pos_fields / set_price_list_currency) valyuta
+    # yoki kursni POS Profile/Price List'dan qayta yozgan bo'lishi mumkin —
+    # bazadan olingan kurslarni qayta o'rnatamiz. base_* summalarni bu yerda
+    # qo'lda hisoblamaymiz: save() -> calculate_taxes_and_totals() ularni
+    # aynan shu conversion_rate bilan o'zi hisoblaydi.
+    _apply_currency_fields()
 
-    conversion_rate = 1
-    exchange_rate_date = invoice_doc.posting_date
-    if invoice_doc.currency != company_currency:
-        conversion_rate, exchange_rate_date = get_latest_rate(
-            invoice_doc.currency,
-            company_currency,
-            cache=currency_cache,
-        )
-        if not conversion_rate:
-            frappe.throw(
-                _(
-                    "Unable to find exchange rate for {0} to {1}. Please create a Currency Exchange record manually"
-                ).format(invoice_doc.currency, company_currency)
-            )
-
-        plc_conversion_rate = 1
-        if price_list_currency != invoice_doc.currency:
-            plc_conversion_rate, _ignored = get_latest_rate(
-                price_list_currency,
-                invoice_doc.currency,
-                cache=currency_cache,
-            )
-            if not plc_conversion_rate:
-                frappe.throw(
-                    _(
-                        "Unable to find exchange rate for {0} to {1}. Please create a Currency Exchange record manually"
-                    ).format(price_list_currency, invoice_doc.currency)
-                )
-
-        invoice_doc.conversion_rate = conversion_rate
-        invoice_doc.plc_conversion_rate = plc_conversion_rate
-        invoice_doc.price_list_currency = price_list_currency
-
-        # Update rates and amounts for all items using multiplication
-        for item in invoice_doc.items:
-            if item.price_list_rate:
-                item.base_price_list_rate = flt(
-                    item.price_list_rate * (conversion_rate / plc_conversion_rate),
-                    item.precision("base_price_list_rate"),
-                )
-            if item.rate:
-                item.base_rate = flt(item.rate * conversion_rate, item.precision("base_rate"))
-            if item.amount:
-                item.base_amount = flt(item.amount * conversion_rate, item.precision("base_amount"))
-
-        # Update payment amounts
-        for payment in invoice_doc.payments:
-            payment.base_amount = flt(payment.amount * conversion_rate, payment.precision("base_amount"))
-
-        # Update invoice level amounts
-        invoice_doc.base_total = flt(invoice_doc.total * conversion_rate, invoice_doc.precision("base_total"))
-        invoice_doc.base_net_total = flt(
-            invoice_doc.net_total * conversion_rate,
-            invoice_doc.precision("base_net_total"),
-        )
-        invoice_doc.base_grand_total = flt(
-            invoice_doc.grand_total * conversion_rate,
-            invoice_doc.precision("base_grand_total"),
-        )
-        invoice_doc.base_rounded_total = flt(
-            invoice_doc.rounded_total * conversion_rate,
-            invoice_doc.precision("base_rounded_total"),
-        )
-        invoice_doc.base_in_words = money_in_words(invoice_doc.base_rounded_total, company_currency)
-
-        # Update data to be sent back to frontend
-        data["conversion_rate"] = conversion_rate
-        data["plc_conversion_rate"] = plc_conversion_rate
-        data["exchange_rate_date"] = exchange_rate_date
+    # Frontendga qaytarish uchun
+    data["conversion_rate"] = conversion_rate
+    data["plc_conversion_rate"] = plc_conversion_rate
+    data["exchange_rate_date"] = exchange_rate_date
 
     inclusive = frappe.get_cached_value("POS Profile", invoice_doc.pos_profile, "posa_tax_inclusive")
     if invoice_doc.get("taxes"):
@@ -817,6 +784,17 @@ def update_invoice(data):
         invoice_doc.save()
     finally:
         frappe.flags.mute_messages = False
+
+    # Himoya: ERPNext validate() ichida (masalan Customer.default_currency
+    # yoki POS Profile orqali) chek valyutasi o'zgarib ketgan bo'lsa, UZS
+    # summalar USD deb yozilib ketardi — bunday chekni qabul qilmaymiz.
+    if (invoice_doc.currency or "") != selected_currency:
+        frappe.throw(
+            _(
+                "Invoice currency changed during save: expected {0}, got {1}. Check the Customer's Default Currency and the POS Profile currency."
+            ).format(selected_currency, invoice_doc.currency)
+        )
+
     # Re-set price list after save in case ERPNext controllers overrode it
     if effective_price_list and invoice_doc.selling_price_list != effective_price_list:
         frappe.db.set_value(
