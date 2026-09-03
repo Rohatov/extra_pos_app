@@ -5,7 +5,7 @@
 import frappe
 from frappe import _
 from frappe.model.mapper import get_mapped_doc
-from frappe.utils import add_days, flt
+from frappe.utils import add_days, cint, flt
 
 from suviner_pos.suviner_pos.api.utilities import get_company_domain  # Updated import
 from suviner_pos.suviner_pos.api.payments import get_suviner_pos_credit_redeem_remark
@@ -22,6 +22,80 @@ def validate(doc, method):
     calc_delivery_charges(doc)
     apply_tax_inclusive(doc)
     set_default_discount_account(doc)
+    # Eng oxirida — yuqoridagilar summalarni qayta hisoblashi mumkin
+    write_off_base_rounding_difference(doc)
+
+
+def write_off_base_rounding_difference(doc, method=None):
+    """Multi-valyuta POS chekida kompaniya valyutasidagi tiyin farqini
+    POS Profile write_off_limit doirasida avtomatik hisobdan chiqaradi.
+
+    Muammo (2026-09-03, chek ACC-SINV-2026-01174): chek UZS, kompaniya USD,
+    kurs ~0.000084. ERPNext soliqsiz chekda base_grand_total = har tovar
+    base_amount'ining (alohida sentgacha yaxlitlangan) yig'indisi (41.74),
+    base_paid_amount esa to'lovlar yig'indisidan yaxlitlanadi (41.73).
+    Natija: chek UZS'da 100% to'langan bo'lsa ham outstanding = 0.01 USD,
+    status "Partly Paid", mijozda har savdodan tiyin qarz yig'iladi.
+
+    ERPNext write_off_limit bo'yicha avto write-off'ni faqat "consolidated"
+    (POS Invoice -> Sales Invoice) cheklarga qo'llaydi; bizniki to'g'ridan-
+    to'g'ri Sales Invoice. Shuning uchun shu yerda: chek O'Z valyutasida
+    to'liq to'langan bo'lsa va qolgan farq limitdan oshmasa — farq
+    write_off_account'ga yoziladi (GL: Debtors kredit, write-off debet).
+
+    write_off_amount chek valyutasida saqlanadi; base_write_off_amount undan
+    kurs bilan hisoblanadi (calculate_taxes_and_totals), shuning uchun
+    chek valyutasidagi qiymat kerakli base farqdan teskari hisoblanadi.
+    """
+    if doc.doctype != "Sales Invoice" or not cint(doc.get("is_pos")) or cint(doc.get("is_return")):
+        return
+    if cint(doc.get("is_consolidated")) or not doc.get("pos_profile"):
+        return
+    if doc.get("party_account_currency") == doc.get("currency"):
+        return  # farq faqat valyutalar har xil bo'lganda yuzaga keladi
+
+    grand_total = flt(doc.get("rounded_total") or doc.get("grand_total"))
+    if grand_total <= 0:
+        return
+    tolerance = 1.0 / (10 ** doc.precision("grand_total"))
+    if flt(doc.get("paid_amount")) + tolerance < grand_total:
+        return  # chek o'z valyutasida to'liq to'lanmagan — haqiqiy qarz, tegilmaydi
+
+    outstanding = flt(doc.get("outstanding_amount"), doc.precision("outstanding_amount"))
+    if not outstanding:
+        return
+
+    profile = frappe.get_cached_value(
+        "POS Profile", doc.pos_profile,
+        ["write_off_limit", "write_off_account", "write_off_cost_center"], as_dict=True,
+    ) or {}
+    limit = flt(profile.get("write_off_limit"))
+    account = doc.get("write_off_account") or profile.get("write_off_account")
+    if not limit or abs(outstanding) > limit or not account:
+        return
+
+    rate = flt(doc.get("conversion_rate")) or 1.0
+    target_base = flt(doc.get("base_write_off_amount")) + outstanding
+    doc.write_off_account = account
+    doc.write_off_cost_center = doc.get("write_off_cost_center") or profile.get("write_off_cost_center")
+    doc.write_off_amount = flt(target_base / rate, doc.precision("write_off_amount"))
+    doc.calculate_taxes_and_totals()
+
+    # Kurs juda kichik bo'lganda chek valyutasidagi yaxlitlash base'da
+    # kerakli tiyinga tushmasligi mumkin — bir necha qadam tuzatiladi.
+    step = 1.0 / (10 ** doc.precision("write_off_amount"))
+    for _i in range(50):
+        remaining = flt(doc.get("outstanding_amount"), doc.precision("outstanding_amount"))
+        if not remaining:
+            break
+        doc.write_off_amount = flt(doc.write_off_amount + (step if remaining > 0 else -step), doc.precision("write_off_amount"))
+        doc.calculate_taxes_and_totals()
+
+    frappe.logger("suviner_pos").info(
+        "Rounding write-off %s: outstanding %s %s -> write_off %s %s (base %s)",
+        doc.name, outstanding, doc.get("party_account_currency"),
+        doc.write_off_amount, doc.currency, doc.get("base_write_off_amount"),
+    )
 
 
 def set_default_discount_account(doc):
