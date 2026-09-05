@@ -1112,6 +1112,15 @@ def submit_invoice(invoice, data, submit_in_background=False):
     invoice_doc.posa_is_printed = 1
     if desired_price_list:
         invoice_doc.selling_price_list = desired_price_list
+    # POS ma'lumot maydonlari (sverka/chek uchun): mijoz bergan pul, qaytim,
+    # balansga o'tgan ortiqcha. Buxgalteriyaga ta'sir qilmaydi.
+    for key, field in (
+        ("pos_tendered_amount", "posa_tendered_amount"),
+        ("pos_change_amount", "posa_change_amount"),
+        ("excess_to_balance", "posa_excess_to_balance"),
+    ):
+        if data.get(key) is not None and invoice_doc.meta.has_field(field):
+            invoice_doc.set(field, flt(data.get(key)))
     # Suppress "Payment Entry linked against Order" messages during POS submit
     frappe.flags.mute_messages = True
     try:
@@ -1165,8 +1174,55 @@ def submit_invoice(invoice, data, submit_in_background=False):
 
         _create_change_payment_entries(invoice_doc, data, pos_profile, cash_account)
         redeeming_customer_credit(invoice_doc, data, is_payment_entry, total_cash, cash_account, payments)
+        balance_info = _apply_customer_balance_rules(invoice_doc, data)
 
-    return {"name": invoice_doc.name, "status": invoice_doc.docstatus}
+    result = {"name": invoice_doc.name, "status": invoice_doc.docstatus}
+    if balance_info:
+        result.update(balance_info)
+    return result
+
+
+def _apply_customer_balance_rules(invoice_doc, data):
+    """Chek submit bo'lgach — "Qarzga sotishga ruxsat" rejimi (Naxt Savdo'dan
+    boshqa mijozlar):
+
+    * data.excess_payments: [{mode_of_payment, amount}] — kassir olgan ortiqcha
+      pul (chek valyutasida). Qaytim emas: avval mijozning eski qarzlari (FIFO),
+      qolgani balansda avans bo'lib qoladi.
+    * data.apply_customer_balance: mijozning mavjud avansi/kredit-notasi shu
+      chekning qoldig'iga avtomatik qo'llanadi (qolgani qarz bo'lib turadi).
+
+    Naxt Savdo uchun klient bularni yubormaydi (qaytim qaytariladi).
+    """
+    from suviner_pos.suviner_pos.api.payment_entry import apply_customer_credit, book_customer_money
+
+    if invoice_doc.doctype != "Sales Invoice" or cint(invoice_doc.get("is_return")):
+        return {}
+    info = {"excess_entries": [], "excess_allocated": 0.0, "excess_advance": 0.0, "credit_applied": 0.0}
+    posting_date = invoice_doc.get("posting_date") or nowdate()
+    cost_center = invoice_doc.get("cost_center")
+
+    if cint(data.get("apply_customer_balance")):
+        info["credit_applied"] = flt(apply_customer_credit(invoice_doc.name))
+
+    for row in data.get("excess_payments") or []:
+        amount = flt(row.get("amount"))
+        mode = (row.get("mode_of_payment") or "").strip()
+        if amount <= 0 or not mode:
+            continue
+        booked = book_customer_money(
+            company=invoice_doc.company, customer=invoice_doc.customer,
+            amount=amount, currency=row.get("currency") or invoice_doc.currency,
+            mode_of_payment=mode, posting_date=posting_date,
+            reference_no=invoice_doc.get("posa_pos_opening_shift"), cost_center=cost_center,
+            exclude_invoices=[invoice_doc.name],
+        )
+        info["excess_allocated"] = flt(info["excess_allocated"] + booked["allocated_amount"])
+        info["excess_advance"] = flt(info["excess_advance"] + booked["advance_amount"])
+        for pe_doc in (booked["allocated_entry"], booked["advance_entry"]):
+            if pe_doc is not None:
+                info["excess_entries"].append(pe_doc.name)
+    return info
 
 
 def submit_in_background_job(kwargs):
@@ -1214,6 +1270,7 @@ def submit_in_background_job(kwargs):
 
         _create_change_payment_entries(invoice_doc, data, invoice_doc.pos_profile, cash_account)
         redeeming_customer_credit(invoice_doc, data, is_payment_entry, total_cash, cash_account, payments)
+        _apply_customer_balance_rules(invoice_doc, data)
 
     except Exception as e:
         frappe.db.rollback()

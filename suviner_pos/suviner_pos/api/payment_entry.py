@@ -33,8 +33,19 @@ def create_payment_entry(
     posting_date=None,
     cost_center=None,
     submit=0,
+    insert=True,
 ):
     """Mijozdan qarz to'lovi (Payment Entry, Receive).
+
+    `insert=False` — hujjat SAQLANMASDAN qaytariladi: chaqiruvchi avval
+    invoice reference'larini qo'shib, keyin o'zi insert/submit qiladi.
+    DIQQAT: reference'siz insert qilinsa, kompaniyada "Book Advance Payments
+    in Separate Party Account" yoqilgan bo'lsa ERPNext (set_liability_account)
+    to'lovni AVANS deb hisoblab paid_from'ni Debtors'dan avans hisobiga
+    (Klient Avans) o'tkazib yuboradi; keyin invoice biriktirilganda
+    "is associated with Debtors, but Party Account is Klient Avans" xatosi
+    chiqadi. Sales Invoice reference'lari insert paytida turgan bo'lsa,
+    ERPNext uni oddiy to'lov deb qabul qiladi va hisob Debtors'da qoladi.
 
     `amount` — `currency` valyutasidagi summa. Ikki holat qo'llanadi:
 
@@ -137,6 +148,9 @@ def create_payment_entry(
     pe.target_exchange_rate = target_exchange_rate
     pe.set_amounts()
 
+    if not insert:
+        return pe
+
     pe.insert(ignore_permissions=True)
     if submit:
         pe.submit()
@@ -218,8 +232,13 @@ def get_outstanding_invoices(customer=None, company=None, currency=None, pos_pro
         if not include_all_currencies and currency:
             filters["currency"] = currency
 
-        if pos_profile:
-            filters["pos_profile"] = pos_profile
+        # DIQQAT: `pos_profile` bo'yicha filtrlanmaydi. Mijoz qarzi kassaga
+        # emas, mijozga tegishli: qo'lda/import orqali kiritilgan (is_pos=0,
+        # pos_profile bo'sh) yoki boshqa kassada ochilgan invoicelar ham
+        # shu yerda ko'rinishi va yopilishi kerak. Ilgari filtr qo'yilgani
+        # uchun bunday qarzlar tushib qolib, POS "qarz yo'q" deb turardi.
+        # Quyidagi Journal Entry qismi ham pos_profile'ga qaramaydi.
+        # `pos_profile` argumenti API moslik uchun qabul qilinadi, ishlatilmaydi.
 
         # Get all outstanding invoices directly from Sales Invoice
         outstanding_invoices = frappe.get_all(
@@ -877,12 +896,16 @@ def process_pos_payment(payload):
         if not invoice_name:
             continue
         outstanding = flt(invoice.get("outstanding_amount"))
-        if outstanding <= 0 and voucher_type == "Sales Invoice":
-            try:
-                si = frappe.get_doc("Sales Invoice", invoice_name)
-                outstanding = flt(si.outstanding_amount)
-            except Exception:
-                outstanding = 0
+        if voucher_type == "Sales Invoice":
+            # Klient yuborgan qoldiq eskirgan bo'lishi mumkin (boshqa kassada
+            # to'lov bo'lgan) — taqsimlash uchun har doim bazadagi joriy
+            # qoldiq olinadi; submit qilinmagan/bekor qilingan invoice tashlanadi.
+            row = frappe.db.get_value(
+                "Sales Invoice", invoice_name, ["outstanding_amount", "docstatus"], as_dict=True
+            )
+            if not row or cint(row.docstatus) != 1:
+                continue
+            outstanding = flt(row.outstanding_amount)
         if outstanding <= 0:
             continue
         remaining_invoices.append(
@@ -1128,7 +1151,48 @@ def process_pos_payment(payload):
                     reference_date=today,
                     cost_center=data.pos_profile.get("cost_center"),
                     submit=0,
+                    insert=False,
                 )
+
+                if cint(data.get("allow_advance")):
+                    # "Qarzga sotishga ruxsat" rejimi (Naxt Savdo'dan boshqa
+                    # mijozlar): qarz bo'lmasa ham, qarzdan ortiq bo'lsa ham —
+                    # avval FIFO qarzga, qolgani mijoz balansiga (avans).
+                    booked = book_customer_money(
+                        company=company, customer=customer,
+                        amount=amount, currency=payment_method.get("currency") or currency,
+                        mode_of_payment=mode_of_payment, posting_date=today,
+                        reference_no=pos_opening_shift_name,
+                        cost_center=data.pos_profile.get("cost_center"),
+                    )
+                    for pe_doc in (booked["allocated_entry"], booked["advance_entry"]):
+                        if pe_doc is not None:
+                            new_payments_entry.append(pe_doc)
+                            all_payments_entry.append(pe_doc)
+                    # Keyingi usul uchun qolgan qarzlarni yangilaymiz
+                    for inv in remaining_invoices:
+                        inv["outstanding_amount"] = flt(
+                            frappe.db.get_value("Sales Invoice", inv["name"], "outstanding_amount")
+                        )
+                    continue
+
+                # POS to'lovi FAQAT qarzni yopish uchun: mijoz oldindan pul
+                # bermaydi, ortiqchasi qaytim qilib qaytariladi. Shuning uchun
+                # yopiladigan invoice bo'lmasa yoki summa qarzdan oshsa to'lov
+                # rad etiladi — hech qachon avans (unallocated) yaratilmaydi.
+                total_outstanding = sum(inv["outstanding_amount"] for inv in remaining_invoices)
+                if total_outstanding <= 0:
+                    frappe.throw(_("Yopiladigan qarzdor invoice topilmadi — to'lov qabul qilinmadi."))
+                # Kurs bilan o'girishdagi yaxlitlash uchun kichik tolerans
+                # (klientdagi bilan bir xil: kamida 0.01, qarzning 0.1%).
+                overpay_tolerance = max(0.01, abs(total_outstanding) * 0.001)
+                if flt(payment_entry.paid_amount) > total_outstanding + overpay_tolerance:
+                    frappe.throw(
+                        _("To'lov qarzdan oshib ketdi: {0} > {1}. Ortiqchasini qaytim qilib bering.").format(
+                            fmt_money(payment_entry.paid_amount, currency=payment_entry.paid_from_account_currency),
+                            fmt_money(total_outstanding, currency=payment_entry.paid_from_account_currency),
+                        )
+                    )
 
                 # Taqsimlash Debtors (party account) valyutasida: invoice
                 # outstanding_amount ham, PE.paid_amount ham shu valyutada.
@@ -1161,7 +1225,9 @@ def process_pos_payment(payload):
                 payment_entry.unallocated_amount = payment_entry.paid_amount - allocated_amount
                 payment_entry.difference_amount = payment_entry.paid_amount - allocated_amount
 
-                payment_entry.save(ignore_permissions=True)
+                # Reference'lar BILAN birinchi marta saqlanadi — ERPNext buni
+                # oddiy qarz to'lovi deb ko'radi, paid_from Debtors'da qoladi.
+                payment_entry.insert(ignore_permissions=True)
                 payment_entry.submit()
 
                 new_payments_entry.append(payment_entry)
@@ -1215,6 +1281,224 @@ def process_pos_payment(payload):
         "reconciled_payments": reconciled_payments,
         "errors": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Mijoz balansi (avans) — POS Profile "Qarzga sotishga ruxsat" rejimi.
+#
+# Naxt Savdo (yuruvchi mijoz) dan boshqa mijozlar uchun: ortiqcha pul qaytim
+# emas — avval eski qarzlar (FIFO), qolgani mijoz balansida AVANS bo'lib
+# turadi; mijoz oldindan pul berib ketishi ham mumkin. Keyingi xaridda avans
+# chekka avtomatik qo'llanadi.
+#
+# ERPNext mexanikasi (Company: "Book Advance Payments in Separate Party
+# Account" YOQIQ): reference'siz Payment Entry insert paytida
+# set_liability_account() orqali avans hisobiga (Klient Avans) o'tkaziladi va
+# unda book_advance_payments_in_separate_party_account=1 bo'ladi. Keyin
+# reconcile_against_document() uni invoice'ga bog'laganda hisob mosligi
+# tekshirilmaydi va make_advance_gl_entries() Klient Avans -> Debtors
+# o'tkazmasini yozadi. Shuning uchun qarzga bog'langan qism va avans qismi
+# IKKI alohida PE bo'ladi (bitta PE'da bo'lsa avans qismi Debtors'da qolardi).
+# ---------------------------------------------------------------------------
+
+def _customer_open_invoices(customer, company, exclude=None):
+    filters = {
+        "customer": customer, "company": company, "docstatus": 1, "is_return": 0,
+        "outstanding_amount": (">", 0),
+    }
+    if exclude:
+        filters["name"] = ("not in", list(exclude))
+    return frappe.get_all(
+        "Sales Invoice", filters=filters,
+        fields=["name", "outstanding_amount", "posting_date", "debit_to"],
+        order_by="posting_date asc, creation asc",
+    )
+
+
+def _customer_advances(customer, company):
+    return frappe.get_all(
+        "Payment Entry",
+        filters={
+            "party_type": "Customer", "party": customer, "company": company, "docstatus": 1,
+            "payment_type": "Receive", "unallocated_amount": (">", 0),
+        },
+        fields=["name", "unallocated_amount", "paid_from", "paid_from_account_currency",
+                "posting_date", "mode_of_payment", "cost_center", "book_advance_payments_in_separate_party_account"],
+        order_by="posting_date asc, creation asc",
+    )
+
+
+def _customer_credit_notes(customer, company):
+    return frappe.get_all(
+        "Sales Invoice",
+        filters={"customer": customer, "company": company, "docstatus": 1, "outstanding_amount": ("<", 0)},
+        fields=["name", "outstanding_amount", "posting_date", "debit_to", "conversion_rate", "currency", "is_return"],
+        order_by="posting_date asc, creation asc",
+    )
+
+
+@frappe.whitelist()
+def get_customer_balance(customer, company):
+    """Mijozning qarzi va krediti — Debtors (qarz) valyutasida.
+
+    net_balance > 0: mijozda avans/kredit bor; < 0: mijoz qarzdor.
+    """
+    party_account = get_party_account("Customer", customer, company)
+    currency = get_account_currency(party_account) if party_account else None
+    outstanding_total = flt(sum(flt(r.outstanding_amount) for r in _customer_open_invoices(customer, company)))
+    advances = _customer_advances(customer, company)
+    advance_total = flt(sum(flt(r.unallocated_amount) for r in advances))
+    credit_note_total = flt(sum(abs(flt(r.outstanding_amount)) for r in _customer_credit_notes(customer, company)))
+    return {
+        "customer": customer,
+        "currency": currency,
+        "outstanding_total": outstanding_total,
+        "advance_total": advance_total,
+        "credit_note_total": credit_note_total,
+        "available_credit": flt(advance_total + credit_note_total),
+        "net_balance": flt(advance_total + credit_note_total - outstanding_total),
+        "advances": advances,
+    }
+
+
+def book_customer_money(
+    company, customer, amount, currency, mode_of_payment,
+    posting_date=None, reference_no=None, cost_center=None, exclude_invoices=None,
+):
+    """Mijozdan olingan pulni joylashtiradi: avval ochiq invoice'lar (FIFO),
+    qolgani — AVANS (reference'siz PE, ERPNext uni avans hisobiga o'tkazadi).
+
+    `amount` — `currency` valyutasida (kassa UZS yoki qarz USD).
+    Qaytaradi: allocated_entry / advance_entry (PE hujjatlari yoki None),
+    allocated_amount / advance_amount (qarz valyutasida).
+    """
+    posting_date = posting_date or nowdate()
+    common = dict(
+        company=company, customer=customer, mode_of_payment=mode_of_payment,
+        posting_date=posting_date, reference_no=reference_no, reference_date=posting_date,
+        cost_center=cost_center,
+    )
+    probe = create_payment_entry(amount=amount, currency=currency, insert=False, **common)
+    debt_ccy = probe.paid_from_account_currency
+    kassa_ccy = probe.paid_to_account_currency
+    precision = probe.precision("paid_amount") or 2
+    total_debt = flt(probe.paid_amount, precision)
+
+    remaining = total_debt
+    refs = []
+    for inv in _customer_open_invoices(customer, company, exclude=exclude_invoices):
+        if remaining <= 0:
+            break
+        alloc = min(remaining, flt(inv.outstanding_amount))
+        if alloc <= 0:
+            continue
+        refs.append({
+            "reference_doctype": "Sales Invoice", "reference_name": inv.name,
+            "total_amount": flt(inv.outstanding_amount), "outstanding_amount": flt(inv.outstanding_amount),
+            "allocated_amount": alloc,
+        })
+        remaining = flt(remaining - alloc, precision)
+    allocated = flt(total_debt - remaining, precision)
+
+    result = {
+        "allocated_entry": None, "advance_entry": None,
+        "allocated_amount": allocated, "advance_amount": 0.0,
+        "debt_currency": debt_ccy, "kassa_currency": kassa_ccy,
+    }
+
+    used_kassa = 0.0
+    if allocated > 0:
+        if remaining <= 0 and currency == kassa_ccy:
+            # Hammasi qarzga ketdi — kassir bergan summa aynan o'zida saqlanadi.
+            pe1 = create_payment_entry(amount=amount, currency=currency, insert=False, **common)
+        else:
+            pe1 = create_payment_entry(amount=allocated, currency=debt_ccy, insert=False, **common)
+        for ref in refs:
+            pe1.append("references", ref)
+        pe1.total_allocated_amount = allocated
+        pe1.unallocated_amount = flt(pe1.paid_amount - allocated, precision)
+        pe1.difference_amount = 0
+        pe1.insert(ignore_permissions=True)
+        pe1.submit()
+        result["allocated_entry"] = pe1
+        used_kassa = flt(pe1.received_amount)
+
+    if currency == kassa_ccy:
+        rem_amount, rem_ccy = flt(amount - used_kassa, 2), kassa_ccy
+    else:
+        rem_amount, rem_ccy = flt(total_debt - allocated, precision), debt_ccy
+    if rem_amount > 0:
+        try:
+            pe2 = create_payment_entry(amount=rem_amount, currency=rem_ccy, insert=False, **common)
+        except frappe.ValidationError:
+            pe2 = None  # kursdan keyin 0 bo'lib qoladigan tiyin — e'tiborsiz
+        if pe2 is not None and flt(pe2.paid_amount) > 0:
+            pe2.insert(ignore_permissions=True)   # reference'siz -> avans hisobi
+            pe2.submit()
+            result["advance_entry"] = pe2
+            result["advance_amount"] = flt(pe2.paid_amount)
+    return result
+
+
+def apply_customer_credit(invoice_name):
+    """Mijozning mavjud avanslari (unallocated PE) va kredit-notalarini shu
+    invoice qoldig'iga qo'llaydi. Qaytaradi: qo'llangan summa (qarz valyutasida)."""
+    inv = frappe.db.get_value(
+        "Sales Invoice", invoice_name,
+        ["name", "customer", "company", "outstanding_amount", "debit_to", "cost_center", "docstatus"],
+        as_dict=True,
+    )
+    if not inv or cint(inv.docstatus) != 1 or flt(inv.outstanding_amount) <= 0:
+        return 0.0
+    customer, company = inv.customer, inv.company
+    remaining = flt(inv.outstanding_amount)
+    applied = 0.0
+
+    for pe in _customer_advances(customer, company):
+        if remaining <= 0:
+            break
+        alloc = min(flt(pe.unallocated_amount), remaining)
+        if alloc <= 0:
+            continue
+        entry = frappe._dict({
+            "voucher_type": "Payment Entry", "voucher_no": pe.name, "voucher_detail_no": None,
+            "against_voucher_type": "Sales Invoice", "against_voucher": inv.name,
+            # `account` — INVOICE'ning hisobi (Debtors): shu bo'yicha invoice
+            # qoldig'i yangilanadi; PE avans hisobida bo'lsa ham shunday.
+            "account": inv.debit_to, "party_type": "Customer", "party": customer,
+            "dr_or_cr": "credit_in_account_currency",
+            "unreconciled_amount": flt(pe.unallocated_amount), "unadjusted_amount": flt(pe.unallocated_amount),
+            "allocated_amount": alloc, "grand_total": remaining, "outstanding_amount": remaining,
+            "exchange_rate": 1, "is_advance": 0, "difference_amount": 0,
+            "cost_center": pe.cost_center or inv.cost_center,
+        })
+        reconcile_against_document([entry])
+        remaining = flt(remaining - alloc, 2)
+        applied = flt(applied + alloc, 2)
+
+    for cn in _customer_credit_notes(customer, company):
+        if remaining <= 0:
+            break
+        credit = abs(flt(cn.outstanding_amount))
+        alloc = min(credit, remaining)
+        if alloc <= 0:
+            continue
+        note = frappe._dict({
+            "voucher_type": "Sales Invoice", "voucher_no": cn.name, "voucher_detail_no": None,
+            "against_voucher_type": "Sales Invoice", "against_voucher": inv.name,
+            "account": cn.debit_to or inv.debit_to, "party_type": "Customer", "party": customer,
+            "dr_or_cr": "credit_in_account_currency",
+            "unreconciled_amount": credit, "unadjusted_amount": credit, "allocated_amount": alloc,
+            "difference_amount": 0, "difference_account": None, "difference_posting_date": None,
+            "exchange_rate": flt(cn.conversion_rate) or 1,
+            "debit_or_credit_note_posting_date": cn.posting_date,
+            "cost_center": inv.cost_center, "currency": cn.currency,
+        })
+        reconcile_dr_cr_note([note], company)
+        remaining = flt(remaining - alloc, 2)
+        applied = flt(applied + alloc, 2)
+
+    return applied
 
 
 @frappe.whitelist()
@@ -1511,8 +1795,14 @@ def on_payment_entry_cancel(doc, method):
         frappe.msgprint(f"Error cancelling linked Journal Entry: {str(e)}", indicator="red")
 
 @frappe.whitelist()
-def get_payment_methods_accounts(company, mode_of_payments):
-    """Get payment method accounts and their currencies for a company"""
+def get_payment_methods_accounts(company, mode_of_payments, detailed=0):
+    """Get payment method accounts and their currencies for a company.
+
+    detailed=0 (eski klientlar): {mode: account_currency}
+    detailed=1: {mode: {"currency": ..., "account": ..., "type": "Cash"/"Bank"/"General"}}
+    `type` — Mode of Payment turi; POS unga qarab naqd usulni aniqlaydi
+    (qarzdan ortiqcha to'lovda qaytim faqat naqddan beriladi).
+    """
     if not company or not mode_of_payments:
         return {}
     
@@ -1546,9 +1836,27 @@ def get_payment_methods_accounts(company, mode_of_payments):
         
         # Build maps
         currency_map = {acc["name"]: acc["account_currency"] for acc in account_currencies}
-        result = {acc["parent"]: currency_map.get(acc["default_account"]) for acc in accounts if acc["default_account"]}
-        
-        return result
+        if not cint(detailed):
+            return {acc["parent"]: currency_map.get(acc["default_account"]) for acc in accounts if acc["default_account"]}
+
+        type_map = {
+            row["name"]: row["type"]
+            for row in frappe.get_all(
+                "Mode of Payment",
+                filters={"name": ["in", [acc["parent"] for acc in accounts]]},
+                fields=["name", "type"],
+                limit_page_length=1000,
+            )
+        }
+        return {
+            acc["parent"]: {
+                "currency": currency_map.get(acc["default_account"]),
+                "account": acc["default_account"],
+                "type": type_map.get(acc["parent"]),
+            }
+            for acc in accounts
+            if acc["default_account"]
+        }
     except Exception as e:
         frappe.log_error(f"Error in get_payment_methods_accounts: {str(e)}")
         return {}
