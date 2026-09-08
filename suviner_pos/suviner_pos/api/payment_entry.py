@@ -360,6 +360,36 @@ def get_outstanding_invoices(customer=None, company=None, currency=None, pos_pro
                     row.voucher_no: flt(row.allocated_amount) for row in allocated_rows or []
                 }
 
+                # Payment Reconciliation orqali JE'ga bog'langan boshqa JE
+                # to'lovlari (masalan Opening Entry qarzini yopgan Cash Entry).
+                # Bunday kredit qatorlarida reference_type='Journal Entry' turadi
+                # va yuqoridagi journal_lines ro'yxatiga kirmaydi — ularni ham
+                # qarzdan ayirmasak, yopilgan boshlang'ich qarz "ochiq" ko'rinardi.
+                je_allocated_rows = frappe.db.sql(
+                    """
+                        SELECT
+                            jea.reference_name AS voucher_no,
+                            SUM(jea.credit_in_account_currency - jea.debit_in_account_currency) AS allocated_amount
+                        FROM `tabJournal Entry Account` jea
+                        INNER JOIN `tabJournal Entry` je ON je.name = jea.parent
+                        WHERE je.docstatus = 1
+                            AND jea.party_type = 'Customer'
+                            AND jea.party = %(customer)s
+                            AND jea.reference_type = 'Journal Entry'
+                            AND jea.reference_name IN %(voucher_nos)s
+                        GROUP BY jea.reference_name
+                    """,
+                    {
+                        "voucher_nos": tuple(journal_entry_names),
+                        "customer": customer,
+                    },
+                    as_dict=True,
+                )
+                for row in je_allocated_rows or []:
+                    allocated_map[row.voucher_no] = allocated_map.get(row.voucher_no, 0) + flt(
+                        row.allocated_amount
+                    )
+
             # Create consolidated Journal Entry records
             for voucher_no, totals in je_totals.items():
                 net_outstanding = flt(totals["debit"]) - flt(totals["credit"])
@@ -484,6 +514,16 @@ def get_unallocated_payments(customer, company, currency=None, mode_of_payment=N
                 "remarks": note.remarks,
             }
         )
+
+    # Journal Entry avanslari: mijoz hisobiga (Debtors) reference'siz kredit
+    # qilingan JE qatorlari — masalan tashqi tizimdan import qilingan ortiqcha
+    # to'lov. Payment Entry avansi kabi ochiq qarzga qo'llanadi.
+    # mode_of_payment filtri berilsa JE'lar chiqmaydi (ularda to'lov usuli yo'q).
+    if not mode_of_payment:
+        for row in _customer_journal_advances(customer, company, account=party_account):
+            if currency and row.currency and row.currency != currency:
+                continue
+            unallocated_payment.append(row)
 
     unallocated_payment = sorted(
         unallocated_payment,
@@ -702,6 +742,47 @@ def auto_reconcile_customer_invoices(customer, company, currency=None, pos_profi
                     "allocated_amount": allocated_credit,
                     "allocations": invoice_allocations,
                     "type": "Credit Note",
+                }
+            )
+            continue
+
+        if payment.get("voucher_type") == "Journal Entry":
+            # JE avansi: reference'siz kredit qatori -> ochiq invoice/JE qarzlariga FIFO.
+            je_row = _load_journal_advance_row(payment.get("reference_row"))
+            if not je_row:
+                skipped_payments.append(
+                    _("Journal Entry {0} advance is no longer available.").format(payment_name)
+                )
+                continue
+            invoice_allocations = []
+            try:
+                allocated_amount, invoice_allocations = _allocate_journal_advance(
+                    je_row, outstanding_invoices, customer
+                )
+            except Exception as exc:
+                _restore_outstandings(invoice_allocations)
+                skipped_payments.append(
+                    _("Failed to reconcile Journal Entry {0}: {1}").format(payment_name, frappe._(str(exc)))
+                )
+                frappe.log_error(
+                    title="POS Auto Reconcile Error",
+                    message=f"Failed to auto reconcile journal entry {payment_name}: {str(exc)}",
+                )
+                continue
+            if allocated_amount <= 0:
+                skipped_payments.append(
+                    _("No outstanding invoices were available to reconcile Journal Entry {0}.").format(
+                        payment_name
+                    )
+                )
+                continue
+            total_allocated += allocated_amount
+            allocations.append(
+                {
+                    "payment_entry": payment_name,
+                    "allocated_amount": allocated_amount,
+                    "allocations": invoice_allocations,
+                    "type": "Journal Entry",
                 }
             )
             continue
@@ -1337,6 +1418,148 @@ def _customer_credit_notes(customer, company):
     )
 
 
+def _customer_journal_advances(customer, company, account=None):
+    """Journal Entry avanslari: mijoz hisobiga reference'siz KREDIT qilingan JE
+    qatorlari (masalan "Biznes"dan import qilingan ortiqcha to'lov, qo'lda JE).
+
+    Faqat Receivable (Debtors) turidagi hisoblar; kompaniyaning alohida avans
+    hisobi (default_advance_received_account) chiqarib tashlanadi — undagi JE
+    qatorini invoice'ga bog'lashda ERPNext GL ko'chirmasini qilmaydi.
+    Qaytariladigan lug'at Payment Entry avansi bilan bir xil kalitlarga ega
+    (`unallocated_amount`, `posting_date`, `currency`, ...), qo'shimcha
+    `voucher_type="Journal Entry"`, `reference_row` (JE Account qatori nomi).
+    """
+    conditions = [
+        "je.docstatus = 1",
+        "je.company = %(company)s",
+        "jea.party_type = 'Customer'",
+        "jea.party = %(customer)s",
+        "acc.account_type = 'Receivable'",
+        "IFNULL(jea.reference_type, '') = ''",
+        "IFNULL(jea.reference_name, '') = ''",
+        "jea.credit_in_account_currency > jea.debit_in_account_currency",
+    ]
+    values = {"company": company, "customer": customer}
+    if account:
+        conditions.append("jea.account = %(account)s")
+        values["account"] = account
+    advance_account = frappe.get_cached_value("Company", company, "default_advance_received_account")
+    if advance_account:
+        conditions.append("jea.account != %(advance_account)s")
+        values["advance_account"] = advance_account
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            je.name, je.posting_date, je.voucher_type AS je_voucher_type, je.remark AS remarks,
+            jea.name AS reference_row, jea.account, jea.account_currency AS currency,
+            jea.exchange_rate, jea.is_advance, jea.cost_center,
+            (jea.credit_in_account_currency - jea.debit_in_account_currency) AS unallocated_amount
+        FROM `tabJournal Entry Account` jea
+        INNER JOIN `tabJournal Entry` je ON je.name = jea.parent
+        INNER JOIN `tabAccount` acc ON acc.name = jea.account
+        WHERE {" AND ".join(conditions)}
+        ORDER BY je.posting_date ASC, je.creation ASC, jea.idx ASC
+        """,
+        values,
+        as_dict=True,
+    )
+    customer_name = frappe.get_cached_value("Customer", customer, "customer_name")
+    for row in rows:
+        row.unallocated_amount = flt(row.unallocated_amount)
+        row.paid_amount = row.unallocated_amount
+        row.received_amount = row.unallocated_amount
+        row.customer_name = customer_name
+        row.voucher_type = "Journal Entry"
+        row.mode_of_payment = row.je_voucher_type or "Journal Entry"
+        row.is_credit_note = 0
+        row.is_journal_entry = 1
+    return rows
+
+
+def _load_journal_advance_row(reference_row):
+    """Bitta JE Account qatorini (avans) yangidan o'qiydi — miqdori o'zgargan bo'lishi mumkin."""
+    if not reference_row:
+        return None
+    row = frappe.db.sql(
+        """
+        SELECT
+            je.name, je.posting_date, je.company, jea.name AS reference_row, jea.account, jea.party,
+            jea.account_currency AS currency, jea.exchange_rate, jea.is_advance, jea.cost_center,
+            (jea.credit_in_account_currency - jea.debit_in_account_currency) AS unallocated_amount
+        FROM `tabJournal Entry Account` jea
+        INNER JOIN `tabJournal Entry` je ON je.name = jea.parent
+        WHERE jea.name = %s AND je.docstatus = 1
+          AND IFNULL(jea.reference_name, '') = ''
+        """,
+        reference_row,
+        as_dict=True,
+    )
+    if not row or flt(row[0].unallocated_amount) <= 0:
+        return None
+    return row[0]
+
+
+def _allocate_journal_advance(je_row, invoices, customer):
+    """JE avansini (bitta JE Account qatori) `invoices` ro'yxatiga FIFO bog'laydi.
+
+    `invoices`: lug'atlar — voucher_type (Sales Invoice / Journal Entry), voucher_no,
+    outstanding_amount; bog'langan summa shu lug'atlardan ayiriladi.
+    ERPNext `reconcile_against_document` bilan (Payment Reconciliation vositasi
+    bilan bir xil): JE qatori bo'linadi, yangi qatorga reference yoziladi,
+    invoice outstanding yangilanadi. GL summalari o'zgarmaydi.
+    Qaytaradi: (bog'langan summa, [{"invoice", "amount"}, ...]).
+    """
+    original = flt(je_row.unallocated_amount)
+    remaining = original
+    entry_list = []
+    invoice_allocations = []
+    for invoice in invoices:
+        if remaining <= 0:
+            break
+        if invoice.get("voucher_type") == "Journal Entry" and invoice.get("voucher_no") == je_row.name:
+            continue  # JE o'zini o'ziga bog'lamaydi
+        outstanding = flt(invoice.get("outstanding_amount"))
+        if outstanding <= 0:
+            continue
+        allocation = min(remaining, outstanding)
+        if allocation <= 0:
+            continue
+        entry_list.append(
+            frappe._dict(
+                {
+                    "voucher_type": "Journal Entry",
+                    "voucher_no": je_row.name,
+                    "voucher_detail_no": je_row.reference_row,
+                    "against_voucher_type": invoice.get("voucher_type") or "Sales Invoice",
+                    "against_voucher": invoice.get("voucher_no"),
+                    "account": je_row.account,
+                    "party_type": "Customer",
+                    "party": customer,
+                    "dr_or_cr": "credit_in_account_currency",
+                    "unreconciled_amount": original,
+                    # bitta qator ketma-ket bir nechta invoice'ga bo'linganda
+                    # ERPNext qolgan summani shu maydondan hisoblaydi
+                    "unadjusted_amount": remaining,
+                    "allocated_amount": allocation,
+                    "exchange_rate": flt(je_row.exchange_rate) or 1,
+                    "is_advance": je_row.is_advance,
+                    "difference_amount": 0,
+                    "difference_account": None,
+                    "cost_center": je_row.cost_center,
+                }
+            )
+        )
+        invoice_allocations.append({"invoice": invoice.get("voucher_no"), "amount": allocation})
+        invoice["outstanding_amount"] = outstanding - allocation
+        remaining = flt(remaining - allocation, 2)
+
+    if not entry_list:
+        return 0.0, []
+    reconcile_against_document(entry_list)
+    return flt(original - remaining, 2), invoice_allocations
+
+
 @frappe.whitelist()
 def get_customer_balance(customer, company):
     """Mijozning qarzi va krediti — Debtors (qarz) valyutasida.
@@ -1347,6 +1570,8 @@ def get_customer_balance(customer, company):
     currency = get_account_currency(party_account) if party_account else None
     outstanding_total = flt(sum(flt(r.outstanding_amount) for r in _customer_open_invoices(customer, company)))
     advances = _customer_advances(customer, company)
+    # JE avanslari (reference'siz kredit qatorlari) ham mijozning krediti
+    advances = list(advances) + list(_customer_journal_advances(customer, company, account=party_account))
     advance_total = flt(sum(flt(r.unallocated_amount) for r in advances))
     credit_note_total = flt(sum(abs(flt(r.outstanding_amount)) for r in _customer_credit_notes(customer, company)))
     return {
@@ -1473,6 +1698,15 @@ def apply_customer_credit(invoice_name):
             "cost_center": pe.cost_center or inv.cost_center,
         })
         reconcile_against_document([entry])
+        remaining = flt(remaining - alloc, 2)
+        applied = flt(applied + alloc, 2)
+
+    # JE avanslari — faqat invoice hisobi (Debtors) bilan bir xil hisobdagilar
+    for je_row in _customer_journal_advances(customer, company, account=inv.debit_to):
+        if remaining <= 0:
+            break
+        target = {"voucher_type": "Sales Invoice", "voucher_no": inv.name, "outstanding_amount": remaining}
+        alloc, _allocs = _allocate_journal_advance(je_row, [target], customer)
         remaining = flt(remaining - alloc, 2)
         applied = flt(applied + alloc, 2)
 
