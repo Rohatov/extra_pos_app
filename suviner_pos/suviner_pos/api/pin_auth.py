@@ -150,6 +150,57 @@ def _get_or_create_api_keys(user: str) -> tuple[str, str]:
 # ──────────────────────────────────────────────────────────────────────
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=120, seconds=60)
+def get_pin_login_profiles():
+    """Login ekranida do'kon (POS Profile) tanlash uchun ro'yxat.
+
+    Faqat YOQILGAN va "Applicable for Users" da kamida bitta YOQILGAN user
+    bo'lgan profillar qaytariladi — bo'sh profilga kirib bo'lmaydi, uni
+    ko'rsatishning ma'nosi yo'q. PIN yoki boshqa maxfiy ma'lumot yo'q.
+    """
+    profiles = frappe.get_all(
+        "POS Profile",
+        filters={"disabled": 0},
+        fields=["name", "company", "currency", "warehouse"],
+        order_by="name",
+    )
+    if not profiles:
+        return []
+
+    rows = frappe.get_all(
+        "POS Profile User",
+        filters={"parent": ("in", [p.name for p in profiles]), "parenttype": "POS Profile"},
+        fields=["user", "parent as pos_profile"],
+    )
+    enabled_users = set()
+    if rows:
+        enabled_users = {
+            d.name
+            for d in frappe.get_all(
+                "User",
+                filters={"name": ("in", list({r.user for r in rows})), "enabled": 1},
+                fields=["name"],
+            )
+        }
+    counts = {}
+    for r in rows:
+        if r.user in enabled_users:
+            counts[r.pos_profile] = counts.get(r.pos_profile, 0) + 1
+
+    return [
+        {
+            "name": p.name,
+            "company": p.company,
+            "currency": p.currency,
+            "warehouse": p.warehouse,
+            "user_count": counts.get(p.name, 0),
+        }
+        for p in profiles
+        if counts.get(p.name)
+    ]
+
+
+@frappe.whitelist(allow_guest=True)
+@rate_limit(limit=120, seconds=60)
 def get_pin_login_users(pos_profile: str | None = None):
     """Applicable for Users dagi yoqilgan userlar ro'yxati.
 

@@ -446,12 +446,10 @@ class ItemDetailAggregator:
         pos_profile: Dict[str, Any],
         price_list: Optional[str] = None,
         customer: Optional[str] = None,
-        strict_price_list: bool = False,
     ) -> None:
         self.pos_profile = pos_profile
         self.customer = customer
         self.price_list = price_list or pos_profile.get("selling_price_list")
-        self.strict_price_list = strict_price_list
         self.cache_ttl = self._resolve_ttl()
         self.today = nowdate()
         self.warehouse = pos_profile.get("warehouse")
@@ -588,38 +586,10 @@ class ItemDetailAggregator:
         for row in alternative_price_rows:
             alternative_price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
 
-        # Fallback: if the selected price list differs from the POS profile default,
-        # fetch prices from the default price list for items that have no price in the
-        # selected one so they don't show rate = 0.
-        # When strict_price_list is True (comparison mode), skip fallback so items
-        # without a price in the selected list correctly return rate = 0.
-        default_price_list = self.pos_profile.get("selling_price_list")
-        if not self.strict_price_list and default_price_list and self.price_list and self.price_list != default_price_list:
-            missing_codes = tuple(sorted(set(item_codes_tuple) - set(price_map.keys())))
-            if missing_codes:
-                default_currency = (
-                    frappe.db.get_value("Price List", default_price_list, "currency")
-                    or self.pos_profile.get("currency")
-                )
-                if use_cache:
-                    fallback_rows = get_item_prices(
-                        default_price_list,
-                        default_currency,
-                        missing_codes,
-                        self.customer,
-                        today=self.today,
-                        ttl=self.cache_ttl,
-                    )
-                else:
-                    fallback_rows = _fetch_item_prices(
-                        default_price_list,
-                        default_currency,
-                        missing_codes,
-                        self.customer or "",
-                        self.today,
-                    )
-                for row in fallback_rows:
-                    price_map.setdefault(row.item_code, {})[row.get("uom") or "None"] = row
+        # NARX ROʻYXATI QATʼIY (2026-09-12): tanlangan price listda narx
+        # boʻlmasa rate = 0 qaytadi. Ilgari bu yerda profil sukut roʻyxatidan
+        # narx olinardi — natijada "Optom" tanlansa ham standart narx
+        # chiqib, kassir notoʻgʻri narxda sotardi.
 
         stock_map = {row.item_code: row.actual_qty for row in stock_rows}
         meta_map = {row.name: row for row in meta_rows}

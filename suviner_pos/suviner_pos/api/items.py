@@ -875,7 +875,11 @@ def get_item_variants(pos_profile, parent_item_code, price_list=None, customer=N
 
 @frappe.whitelist()
 def get_items_details(pos_profile, items_data, price_list=None, customer=None, strict_price_list=None):
-    """Bulk fetch item details for a list of items."""
+    """Bulk fetch item details for a list of items.
+
+    `strict_price_list` — ESKI parametr, endi eʼtiborga olinmaydi: narx
+    HAR DOIM faqat soʻralgan price listdan olinadi (topilmasa 0).
+    """
 
     pos_profile, _ = _ensure_pos_profile(pos_profile)
     items_data = json.loads(items_data)
@@ -883,10 +887,7 @@ def get_items_details(pos_profile, items_data, price_list=None, customer=None, s
     if not items_data:
         return []
 
-    aggregator = ItemDetailAggregator(
-        pos_profile, price_list=price_list, customer=customer,
-        strict_price_list=bool(int(strict_price_list or 0)),
-    )
+    aggregator = ItemDetailAggregator(pos_profile, price_list=price_list, customer=customer)
     return aggregator.build_details(items_data)
 
 
