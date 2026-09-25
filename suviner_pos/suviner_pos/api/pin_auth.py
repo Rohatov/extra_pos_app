@@ -20,6 +20,11 @@ Xavfsizlik:
 * Qo'shimcha IP bo'yicha rate limit.
 * PIN hech qachon javobda qaytarilmaydi va logga yozilmaydi.
 * PIN qat'iy 4 ta raqam (POS Profile saqlanganda tekshiriladi).
+* PIN barcha POS Profillar bo'yicha QATOR uchun noyob: ikki qatorda (ikki xil
+  userda ham, bir userning ikki do'konida ham) bir xil PIN bo'lishi mumkin
+  emas. Shu sababli faqat PIN (`pin_login_by_pin`) userni ham, do'konni ham
+  bir ma'noli aniqlaydi. PIN `__Auth` da shifrlangani uchun DB `unique`
+  constraint qo'yib bo'lmaydi — tekshiruv POS Profile saqlanganda.
 """
 
 import hmac
@@ -40,8 +45,16 @@ LOCK_SECONDS = 10 * 60
 #  POS Profile validate hook — PIN formati
 # ──────────────────────────────────────────────────────────────────────
 def validate_pos_profile_pins(doc, method=None):
-    """POS Profile saqlanganda har bir qatordagi PIN 4 ta raqam ekanini
-    tekshiradi. Saqlangan (yulduzcha ko'rinishdagi) qiymatlar tegilmaydi."""
+    """POS Profile saqlanganda har bir qatordagi PIN 4 ta raqam ekanini va
+    userlar orasida noyobligini tekshiradi. Format tekshiruvi saqlangan
+    (yulduzcha ko'rinishdagi) qiymatlarga tegmaydi."""
+    # Yangi POS Profile nomi qo'lda kiritilganda (Prompt + `__newname`) Frappe
+    # `insert()` bola qatorlarga nom bermaydi (`set_name_in_children` faqat
+    # yangilashda chaqiriladi). Password maydoni (`posa_pin`) esa nomni
+    # `_validate` da, `db_insert` dan OLDIN kerak qiladi — nom bo'lmasa
+    # "Column 'name' cannot be null". Shu sababli nomlarni shu yerda beramiz.
+    doc.set_name_in_children()
+
     for row in doc.get("applicable_for_users") or []:
         pin = (row.get("posa_pin") or "").strip()
         if not pin or _is_dummy(pin):
@@ -52,9 +65,64 @@ def validate_pos_profile_pins(doc, method=None):
                 title=_("Invalid PIN"),
             )
 
+    _validate_unique_pins(doc)
+
 
 def _is_dummy(value: str) -> bool:
     return bool(value) and set(value) == {"*"}
+
+
+def _stored_pin(row_name: str | None) -> str:
+    if not row_name:
+        return ""
+    value = get_decrypted_password("POS Profile User", row_name, "posa_pin", raise_exception=False)
+    return str(value).strip() if value else ""
+
+
+def _effective_pin(row) -> str:
+    """Qatorning amaldagi PINi: formada yangi kiritilgan bo'lsa shu, aks holda
+    (yulduzcha ko'rinishida) `__Auth` dagi saqlangani."""
+    pin = (row.get("posa_pin") or "").strip()
+    if pin and not _is_dummy(pin):
+        return pin
+    return _stored_pin(row.get("name"))
+
+
+def _validate_unique_pins(doc):
+    """Bir PIN ikki qatorda takrorlanmasin (barcha POS Profillar bo'yicha) —
+    faqat PIN bo'yicha kirishda user va do'kon aniq bo'lishi uchun.
+
+    Boshqa profildagi userning ismi xabarda ko'rsatilmaydi — aks holda PINlarni
+    tanlab ko'rib, kimning PINi ekanini bilib olish mumkin bo'lardi.
+    """
+    first_row = {}
+    for row in doc.get("applicable_for_users") or []:
+        pin = _effective_pin(row)
+        if not pin:
+            continue
+        prev = first_row.setdefault(pin, row)
+        if prev is not row:
+            frappe.throw(
+                _("Row #{0} ({1}) and row #{2} ({3}) have the same PIN. PIN must be unique").format(
+                    prev.idx, prev.user, row.idx, row.user
+                ),
+                title=_("Duplicate PIN"),
+            )
+    if not first_row:
+        return
+
+    filters = {"parenttype": "POS Profile"}
+    if doc.name:
+        filters["parent"] = ("!=", doc.name)
+    for other in frappe.get_all("POS Profile User", filters=filters, fields=["name", "user"]):
+        row = first_row.get(_stored_pin(other.name))
+        if row:
+            frappe.throw(
+                _("Row #{0} ({1}): this PIN is already used in another row or POS Profile. PIN must be unique").format(
+                    row.idx, row.user
+                ),
+                title=_("Duplicate PIN"),
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -103,16 +171,16 @@ def _lock_remaining(user: str) -> int:
     return max(ttl, 1)
 
 
-def _register_failure(user: str) -> int:
+def _register_failure(user: str, max_attempts: int = MAX_ATTEMPTS) -> int:
     """Xato urinishni qayd etadi; qolgan urinishlar sonini qaytaradi."""
     cache = frappe.cache()
     fails = cint(cache.get_value(_fail_key(user)) or 0) + 1
     cache.set_value(_fail_key(user), fails, expires_in_sec=LOCK_SECONDS)
-    if fails >= MAX_ATTEMPTS:
+    if fails >= max_attempts:
         cache.set_value(_lock_key(user), now_datetime().isoformat(), expires_in_sec=LOCK_SECONDS)
         cache.delete_value(_fail_key(user))
         return 0
-    return MAX_ATTEMPTS - fails
+    return max_attempts - fails
 
 
 def _clear_failures(user: str):
@@ -292,6 +360,11 @@ def pin_login(user: str, pin: str, pos_profile: str | None = None):
         return {"ok": 0, "remaining_attempts": remaining}
 
     _clear_failures(user)
+    return _login_payload(user, matched.pos_profile)
+
+
+def _login_payload(user: str, pos_profile: str) -> dict:
+    """Muvaffaqiyatli kirish javobi: userning API kaliti (yo'q bo'lsa yaratiladi)."""
     api_key, api_secret = _get_or_create_api_keys(user)
     full_name = frappe.db.get_value("User", user, "full_name") or user
     frappe.db.commit()
@@ -301,5 +374,80 @@ def pin_login(user: str, pin: str, pos_profile: str | None = None):
         "full_name": full_name,
         "api_key": api_key,
         "api_secret": api_secret,
-        "pos_profile": matched.pos_profile,
+        "pos_profile": pos_profile,
     }
+
+
+# Faqat-PIN kirishda user oldindan noma'lum, shuning uchun xato urinishlar
+# userga emas, so'rov yuborgan IP'ga va (X-Forwarded-For soxtalashtirilsa ham
+# butun serverga) hisoblanadi. Qulf kaliti `@` bilan boshlanadi — Frappe user
+# nomi bilan to'qnashmaydi.
+GLOBAL_SCOPE = "@any"
+GLOBAL_MAX_ATTEMPTS = 30
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60)
+def pin_login_by_pin(pin: str, pos_profile: str | None = None):
+    """Faqat PIN bo'yicha kirish — user ham, do'kon ham PINdan aniqlanadi.
+
+    PIN barcha (yoki `pos_profile` berilsa — shu) YOQILGAN profillardagi
+    "Applicable for Users" qatorlari bilan solishtiriladi; mos kelgan
+    qatorning useri va profili uchun `pin_login` bilan bir xil javob
+    qaytariladi (`pos_profile` maydoni — aniqlangan do'kon).
+
+    PIN qatorlar orasida noyob (POS Profile saqlanganda tekshiriladi), lekin
+    eski ma'lumotda takror bo'lsa (ikki user yoki bir userning ikki do'koni) —
+    tasodifiy userga/do'konga kirilmaydi, xato beriladi.
+
+    Xato PIN: {ok: 0, remaining_attempts: n}; qulf (IP yoki umumiy):
+    {ok: 0, locked: 1, lock_seconds: s}.
+    """
+    pin = (pin or "").strip()
+    if not PIN_RE.match(pin):
+        frappe.throw(_("PIN must be exactly 4 digits"))
+
+    ip_scope = f"@ip:{frappe.local.request_ip or ''}"
+    for scope in (ip_scope, GLOBAL_SCOPE):
+        remaining_lock = _lock_remaining(scope)
+        if remaining_lock:
+            return {"ok": 0, "locked": 1, "lock_seconds": remaining_lock}
+
+    rows = _profile_rows(pos_profile)
+    enabled = set()
+    if rows:
+        enabled = {
+            d.name
+            for d in frappe.get_all(
+                "User",
+                filters={"name": ("in", list({r.user for r in rows})), "enabled": 1},
+                fields=["name"],
+            )
+        }
+    # Barcha qatorlar oxirigacha solishtiriladi (erta to'xtamaydi) — javob
+    # vaqti PIN nechanchi qatorga mos kelganini ko'rsatib qo'ymasin.
+    matches = []
+    for r in rows:
+        if r.user not in enabled:
+            continue
+        value = get_decrypted_password("POS Profile User", r.name, "posa_pin", raise_exception=False)
+        if value and hmac.compare_digest(str(value).strip(), pin):
+            matches.append(r)
+
+    if not matches:
+        _register_failure(GLOBAL_SCOPE, GLOBAL_MAX_ATTEMPTS)
+        remaining = _register_failure(ip_scope)
+        if remaining <= 0:
+            return {"ok": 0, "locked": 1, "lock_seconds": LOCK_SECONDS}
+        return {"ok": 0, "remaining_attempts": remaining}
+
+    if len({(r.user, r.pos_profile) for r in matches}) > 1:
+        _register_failure(GLOBAL_SCOPE, GLOBAL_MAX_ATTEMPTS)
+        _register_failure(ip_scope)
+        frappe.throw(
+            _("This PIN is used in more than one place (user or POS Profile). Ask the administrator to give every POS Profile user a unique PIN"),
+            title=_("Duplicate PIN"),
+        )
+
+    _clear_failures(ip_scope)
+    return _login_payload(matches[0].user, matches[0].pos_profile)
